@@ -90,7 +90,28 @@ make release-manifests IMG=ghcr.io/you/cluster-api-provider-verda:v0.1.0
                              # out/infrastructure-components.yaml, metadata.yaml, cluster-template.yaml
 ```
 
-### Try it on a kind management cluster
+### Install with clusterctl
+
+Releases publish `infrastructure-components.yaml`, `metadata.yaml` and the
+cluster templates, and images to `docker.io/hriships`. Register the provider
+in `~/.config/cluster-api/clusterctl.yaml`:
+
+```yaml
+providers:
+  - name: verda
+    type: InfrastructureProvider
+    url: https://github.com/hrishin/cluster-api-provider-verda/releases/latest/infrastructure-components.yaml
+```
+
+then, with `VERDA_CLIENT_ID`/`VERDA_CLIENT_SECRET` exported (clusterctl turns
+them into the provider's credentials Secret):
+
+```sh
+clusterctl init --infrastructure verda
+clusterctl generate cluster demo --infrastructure verda --flavor stock-image ...
+```
+
+### Try it from source on a kind management cluster
 
 ```sh
 kind create cluster --name seed
