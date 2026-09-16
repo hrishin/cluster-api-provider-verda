@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/conditions"
 
 	infrav1 "github.com/hrishin/verda-capi/api/v1beta1"
+	"github.com/hrishin/verda-capi/internal/cloud"
 )
 
 // provisionedMachine sets up a cluster and a VerdaMachine whose instance is
@@ -168,5 +169,59 @@ var _ = Describe("VerdaMachine health", func() {
 		}, timeout, interval).Should(Succeed())
 		Expect(fakeCloud.Instances[first].Status).To(Equal("discontinued"), "the failed instance is deleted")
 		Expect(conditions.GetReason(vm, infrav1.InstanceReadyCondition)).To(Equal(InstanceProvisioningReason))
+	})
+})
+
+var _ = Describe("VerdaMachine hostname collisions", func() {
+	It("does not create an instance when an unmanaged instance has the hostname", func() {
+		fakeCloud.Reset()
+		fakeCloud.Instances["foreign"] = &cloud.Instance{ID: "foreign", Hostname: "m", Status: "running", Tags: map[string]string{}}
+		defer delete(fakeCloud.Instances, "foreign")
+
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "collide-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		verdaCluster := &infrav1.VerdaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: ns.Name},
+			Spec:       infrav1.VerdaClusterSpec{Location: "FIN-03"},
+		}
+		Expect(k8sClient.Create(ctx, verdaCluster)).To(Succeed())
+		cluster := &clusterv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: ns.Name},
+			Spec: clusterv1.ClusterSpec{InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: infrav1.GroupVersion.Group, Kind: "VerdaCluster", Name: "test",
+			}},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		setOwner(verdaCluster, cluster, "Cluster", clusterv1.GroupVersion.String())
+		markClusterProvisioned(cluster, verdaCluster)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "m-bootstrap", Namespace: ns.Name},
+			Data:       map[string][]byte{"value": []byte(bootstrapData)},
+		}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		vm := &infrav1.VerdaMachine{
+			ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: ns.Name, Labels: map[string]string{clusterv1.ClusterNameLabel: "test"}},
+			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		machine := &clusterv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: ns.Name, Labels: map[string]string{clusterv1.ClusterNameLabel: "test"}},
+			Spec: clusterv1.MachineSpec{
+				ClusterName: "test",
+				Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To(secret.Name)},
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1.GroupVersion.Group, Kind: "VerdaMachine", Name: "m",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, machine)).To(Succeed())
+		setOwner(vm, machine, "Machine", clusterv1.GroupVersion.String())
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
+			g.Expect(conditions.GetReason(vm, infrav1.InstanceReadyCondition)).To(Equal("HostnameInUse"))
+		}, timeout, interval).Should(Succeed())
+		Expect(vm.Status.InstanceID).To(BeEmpty())
+		Expect(fakeCloud.Created).To(BeEmpty())
 	})
 })

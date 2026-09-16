@@ -30,14 +30,16 @@ type Fake struct {
 	nextID    int
 	Instances map[string]*Instance
 	Scripts   map[string]string
-	Volumes   map[string]*Volume
+	// ScriptNames maps script IDs to names.
+	ScriptNames map[string]string
+	Volumes     map[string]*Volume
 	// Created records every InstanceSpec passed to CreateInstance.
 	Created []InstanceSpec
 }
 
 // NewFake returns an empty Fake.
 func NewFake() *Fake {
-	return &Fake{Instances: map[string]*Instance{}, Scripts: map[string]string{}, Volumes: map[string]*Volume{}}
+	return &Fake{Instances: map[string]*Instance{}, Scripts: map[string]string{}, ScriptNames: map[string]string{}, Volumes: map[string]*Volume{}}
 }
 
 var _ Client = &Fake{}
@@ -75,6 +77,17 @@ func (f *Fake) FindInstanceByTag(_ context.Context, key, value string) (*Instanc
 func (f *Fake) CreateInstance(_ context.Context, spec InstanceSpec) (*Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	for _, existing := range f.Instances {
+		if existing.Hostname == spec.Hostname && existing.Status != "discontinued" && existing.Tags[TagManagedBy] != ManagedByValue {
+			return nil, fmt.Errorf("instance %s: %w", existing.ID, ErrHostnameInUse)
+		}
+	}
+	for id, name := range f.ScriptNames {
+		if name == spec.Hostname {
+			delete(f.Scripts, id)
+			delete(f.ScriptNames, id)
+		}
+	}
 	f.Created = append(f.Created, spec)
 	f.nextID++
 	id := fmt.Sprintf("inst-%d", f.nextID)
@@ -82,6 +95,7 @@ func (f *Fake) CreateInstance(_ context.Context, spec InstanceSpec) (*Instance, 
 	if spec.StartupScript != "" {
 		scriptID = fmt.Sprintf("script-%d", f.nextID)
 		f.Scripts[scriptID] = spec.StartupScript
+		f.ScriptNames[scriptID] = spec.Hostname
 	}
 	inst := &Instance{
 		ID:              id,
@@ -122,6 +136,19 @@ func (f *Fake) DeleteStartupScript(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.Scripts, id)
+	delete(f.ScriptNames, id)
+	return nil
+}
+
+func (f *Fake) DeleteStartupScriptByName(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, n := range f.ScriptNames {
+		if n == name {
+			delete(f.Scripts, id)
+			delete(f.ScriptNames, id)
+		}
+	}
 	return nil
 }
 

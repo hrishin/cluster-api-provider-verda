@@ -412,6 +412,10 @@ func (r *VerdaClusterReconciler) reconcileDelete(ctx context.Context, verdaClust
 			return ctrl.Result{}, err
 		}
 		verdaCluster.Status.LoadBalancer.StartupScriptID = ""
+	} else if verdaCluster.LoadBalancerEnabled() {
+		if err := r.Cloud.DeleteStartupScriptByName(ctx, loadBalancerHostname(verdaCluster)); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	// The key Secret is garbage collected through its owner reference.
 

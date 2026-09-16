@@ -200,6 +200,13 @@ func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *c
 
 		instance, err = r.createInstance(ctx, cluster, verdaCluster, machine, verdaMachine, bootFrom)
 		if err != nil {
+			if errors.Is(err, cloud.ErrHostnameInUse) {
+				// Not transient: another instance in the account has this
+				// name. Report it and wait for the user rather than retrying.
+				setInstanceReadyFalse(verdaMachine, "HostnameInUse", err.Error())
+				log.Info("Hostname is in use by an unmanaged instance; not creating", "hostname", verdaMachine.Name)
+				return ctrl.Result{RequeueAfter: instanceResyncInterval}, nil
+			}
 			setInstanceReadyFalse(verdaMachine, "InstanceCreateFailed", err.Error())
 			return ctrl.Result{}, err
 		}
@@ -525,6 +532,9 @@ func (r *VerdaMachineReconciler) reconcileDelete(ctx context.Context, verdaMachi
 			return ctrl.Result{}, err
 		}
 		verdaMachine.Status.StartupScriptID = ""
+	} else if err := r.Cloud.DeleteStartupScriptByName(ctx, verdaMachine.Name); err != nil {
+		// The ID was never recorded (crash between script and instance creation).
+		return ctrl.Result{}, err
 	}
 	if err := r.deleteOSVolume(ctx, verdaMachine); err != nil {
 		return ctrl.Result{}, err

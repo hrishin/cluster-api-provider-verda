@@ -33,6 +33,10 @@ var ErrNotFound = errors.New("resource not found")
 // ErrNotManaged is returned when asked to delete a resource this provider did not create.
 var ErrNotManaged = errors.New("resource is not managed by cluster-api-provider-verda")
 
+// ErrHostnameInUse is returned by CreateInstance when a live instance that this
+// provider does not own already uses the requested hostname.
+var ErrHostnameInUse = errors.New("hostname is in use by an instance not managed by cluster-api-provider-verda")
+
 // Tag keys used to correlate Verda resources with Cluster API objects.
 // Verda lowercases keys, so they are kept lowercase here.
 const (
@@ -99,8 +103,14 @@ type Client interface {
 	// FindInstanceByTag returns the first instance carrying key=value, or ErrNotFound.
 	// It is used to recover from a create whose result was never persisted.
 	FindInstanceByTag(ctx context.Context, key, value string) (*Instance, error)
-	// CreateInstance creates the startup script and the instance described by spec.
+	// CreateInstance creates the startup script and the instance described by
+	// spec. A startup script left behind by an earlier attempt (same name) is
+	// replaced. It fails with ErrHostnameInUse if a live instance not owned by
+	// this provider already has spec.Hostname.
 	CreateInstance(ctx context.Context, spec InstanceSpec) (*Instance, error)
+	// DeleteStartupScriptByName deletes any startup scripts with the given
+	// name. Used to clean up scripts whose ID was never recorded.
+	DeleteStartupScriptByName(ctx context.Context, name string) error
 	// DeleteInstance deletes the instance and its OS volume. Deleting a missing
 	// instance is not an error. Instances without the TagManagedBy tag are never
 	// deleted (ErrNotManaged).
@@ -179,6 +189,23 @@ func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*
 }
 
 func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Instance, error) {
+	// Hostnames are the node names and the provider IDs; never take over one
+	// that belongs to something else in the account.
+	instances, err := c.api.Instances.Get(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("listing instances: %w", err)
+	}
+	for i := range instances {
+		existing := toInstance(&instances[i])
+		if existing.Hostname == spec.Hostname && existing.Status != verda.StatusDiscontinued && existing.Tags[TagManagedBy] != ManagedByValue {
+			return nil, fmt.Errorf("instance %s: %w", existing.ID, ErrHostnameInUse)
+		}
+	}
+	// A script from an interrupted earlier attempt would otherwise leak.
+	if err := c.DeleteStartupScriptByName(ctx, spec.Hostname); err != nil {
+		return nil, err
+	}
+
 	req := verda.CreateInstanceRequest{
 		InstanceType: spec.InstanceType,
 		Image:        spec.Image,
@@ -247,6 +274,22 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 			return nil
 		}
 		return fmt.Errorf("deleting instance %s: %w", id, err)
+	}
+	return nil
+}
+
+func (c *sdkClient) DeleteStartupScriptByName(ctx context.Context, name string) error {
+	scripts, err := c.api.StartupScripts.GetAllStartupScripts(ctx)
+	if err != nil {
+		return fmt.Errorf("listing startup scripts: %w", err)
+	}
+	for _, script := range scripts {
+		if script.Name != name {
+			continue
+		}
+		if err := c.DeleteStartupScript(ctx, script.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
