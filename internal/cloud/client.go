@@ -53,6 +53,28 @@ const (
 	ManagedByValue = "cluster-api-provider-verda"
 )
 
+// Instance statuses reported by Verda that the provider acts on.
+const (
+	StatusRunning      = "running"
+	StatusOffline      = "offline"
+	StatusDeleting     = "deleting"
+	StatusDiscontinued = "discontinued"
+	StatusDeleted      = "deleted"
+	StatusError        = "error"
+	StatusNoCapacity   = "no_capacity"
+	// StatusNotFound is synthesised by the provider for an instance that is
+	// recorded but no longer known to Verda.
+	StatusNotFound = "notfound"
+)
+
+// Volume statuses reported by Verda that the provider acts on.
+const (
+	VolumeStatusDetached = "detached"
+	VolumeStatusAttached = "attached"
+	VolumeStatusDeleting = "deleting"
+	VolumeStatusDeleted  = "deleted"
+)
+
 // Instance is the subset of a Verda instance the provider cares about.
 type Instance struct {
 	ID              string
@@ -222,7 +244,7 @@ func (c *sdkClient) FindInstanceByHostname(ctx context.Context, hostname string)
 		if inst.Hostname != hostname {
 			continue
 		}
-		if inst.Status == verda.StatusDiscontinued {
+		if inst.Status == StatusDiscontinued {
 			gone = inst
 			continue
 		}
@@ -246,7 +268,7 @@ func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*
 		if inst.Tags[key] != value {
 			continue
 		}
-		if inst.Status == verda.StatusDiscontinued {
+		if inst.Status == StatusDiscontinued {
 			gone = inst
 			continue
 		}
@@ -267,7 +289,7 @@ func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Ins
 	}
 	for i := range instances {
 		existing := toInstance(&instances[i])
-		if existing.Hostname == spec.Hostname && existing.Status != verda.StatusDiscontinued && existing.Tags[TagManagedBy] != ManagedByValue {
+		if existing.Hostname == spec.Hostname && existing.Status != StatusDiscontinued && existing.Tags[TagManagedBy] != ManagedByValue {
 			return nil, fmt.Errorf("instance %s: %w", existing.ID, ErrHostnameInUse)
 		}
 	}

@@ -49,6 +49,9 @@ import (
 	"github.com/hrishin/verda-capi/internal/loadbalancer"
 )
 
+// verdaClusterKind is the kind name used in references and owner references.
+const verdaClusterKind = "VerdaCluster"
+
 const (
 	// lbPollInterval is how often a provisioning load balancer is re-checked.
 	lbPollInterval = 15 * time.Second
@@ -218,9 +221,9 @@ func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clust
 	}
 
 	switch {
-	case instance.Status == "running" && instance.IP != "":
+	case instance.Status == cloud.StatusRunning && instance.IP != "":
 		// Ready to serve; fall through.
-	case instanceGone(instance) || instance.Status == "error" || instance.Status == "no_capacity":
+	case instanceGone(instance) || instance.Status == cloud.StatusError || instance.Status == cloud.StatusNoCapacity:
 		setLBNotReady(verdaCluster, "InstanceFailed", fmt.Sprintf("load balancer instance %s is in state %q", instance.ID, instance.Status))
 		log.Info("Load balancer instance is in a terminal state", "instanceID", instance.ID, "state", instance.Status)
 		return ctrl.Result{}, nil
@@ -315,7 +318,7 @@ func (r *clusterScope) findLoadBalancer(ctx context.Context, verdaCluster *infra
 		if !errors.Is(err, cloud.ErrNotFound) {
 			return nil, err
 		}
-		return &cloud.Instance{ID: id, Status: "notfound"}, nil
+		return &cloud.Instance{ID: id, Status: cloud.StatusNotFound}, nil
 	}
 	instance, err := r.cloud.FindInstanceByTag(ctx, cloud.TagLoadBalancer, clusterTagValue(verdaCluster))
 	if err != nil {
@@ -377,7 +380,7 @@ func (r *VerdaClusterReconciler) ensureLoadBalancerKeys(ctx context.Context, clu
 			Namespace: key.Namespace,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: cluster.Name},
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(verdaCluster,
-				infrav1.GroupVersion.WithKind("VerdaCluster"))},
+				infrav1.GroupVersion.WithKind(verdaClusterKind))},
 		},
 		Type: corev1.SecretTypeSSHAuth,
 		Data: map[string][]byte{
@@ -426,7 +429,7 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 	}
 	if instance != nil && !instanceGone(instance) {
 		setLBNotReady(verdaCluster, clusterv1.DeletingReason, "Deleting load balancer instance")
-		if instance.Status != "deleting" {
+		if instance.Status != cloud.StatusDeleting {
 			log.Info("Deleting load balancer instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
@@ -524,7 +527,7 @@ func (r *VerdaClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 		WithEventFilter(predicates.ResourceIsNotExternallyManaged(mgr.GetScheme(), predicateLog)).
 		Watches(
 			&clusterv1.Cluster{},
-			handler.EnqueueRequestsFromMapFunc(util.ClusterToInfrastructureMapFunc(ctx, infrav1.GroupVersion.WithKind("VerdaCluster"), mgr.GetClient(), &infrav1.VerdaCluster{})),
+			handler.EnqueueRequestsFromMapFunc(util.ClusterToInfrastructureMapFunc(ctx, infrav1.GroupVersion.WithKind(verdaClusterKind), mgr.GetClient(), &infrav1.VerdaCluster{})),
 			builder.WithPredicates(predicates.ClusterPausedTransitions(mgr.GetScheme(), predicateLog)),
 		).
 		// Control plane machines coming and going change the backend list.
@@ -547,7 +550,7 @@ func (r *VerdaClusterReconciler) verdaMachineToVerdaCluster(ctx context.Context,
 	if err := r.Get(ctx, client.ObjectKey{Namespace: o.GetNamespace(), Name: clusterName}, cluster); err != nil {
 		return nil
 	}
-	if !cluster.Spec.InfrastructureRef.IsDefined() || cluster.Spec.InfrastructureRef.Kind != "VerdaCluster" {
+	if !cluster.Spec.InfrastructureRef.IsDefined() || cluster.Spec.InfrastructureRef.Kind != verdaClusterKind {
 		return nil
 	}
 	return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.InfrastructureRef.Name}}}

@@ -107,7 +107,7 @@ func (p *Provider) InstanceExists(ctx context.Context, node *corev1.Node) (bool,
 		return false, err
 	}
 	switch instance.Status {
-	case "discontinued", "deleted", "notfound":
+	case cloud.StatusDiscontinued, cloud.StatusDeleted, cloud.StatusNotFound:
 		return false, nil
 	}
 	return true, nil
@@ -119,7 +119,7 @@ func (p *Provider) InstanceShutdown(ctx context.Context, node *corev1.Node) (boo
 	if err != nil {
 		return false, err
 	}
-	return instance.Status == "offline", nil
+	return instance.Status == cloud.StatusOffline, nil
 }
 
 // InstanceMetadata implements cloudprovider.InstancesV2.
@@ -158,7 +158,7 @@ func (p *Provider) lookup(ctx context.Context, node *corev1.Node) (*cloud.Instan
 	instance, err := p.client.FindInstanceByHostname(ctx, hostname)
 	if err != nil {
 		if errors.Is(err, cloud.ErrNotFound) {
-			klog.V(4).Infof("no Verda instance with hostname %q for node %s", hostname, node.Name)
+			klog.V(4).InfoS("No Verda instance for node", "hostname", hostname, "node", node.Name)
 		}
 		return nil, err
 	}

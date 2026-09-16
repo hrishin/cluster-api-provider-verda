@@ -76,13 +76,13 @@ func (u *SSHUpdater) UpdateBackends(ctx context.Context, addr string, keys *Keys
 		return fmt.Errorf("ssh handshake with load balancer %s: %w", addr, err)
 	}
 	client := ssh.NewClient(sshConn, chans, reqs)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("opening ssh session: %w", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	var stderr bytes.Buffer
 	session.Stdin = strings.NewReader(Config(backends))

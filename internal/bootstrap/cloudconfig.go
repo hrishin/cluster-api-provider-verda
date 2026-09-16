@@ -30,7 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -172,7 +172,7 @@ func ToStartupScript(data []byte, hostname string) (*Result, error) {
 			res.Unsupported = append(res.Unsupported, key)
 		}
 	}
-	sort.Strings(res.Unsupported)
+	slices.Sort(res.Unsupported)
 
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\n")

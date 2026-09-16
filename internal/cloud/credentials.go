@@ -98,7 +98,7 @@ func readCredentialsFile(path, profile string) (Credentials, error) {
 		}
 		return creds, fmt.Errorf("opening credentials file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	inProfile := false
 	scanner := bufio.NewScanner(f)

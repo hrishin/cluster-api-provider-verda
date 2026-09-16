@@ -40,7 +40,8 @@ import (
 func main() {
 	ccmOptions, err := options.NewCloudControllerManagerOptions()
 	if err != nil {
-		klog.Fatalf("unable to initialize command options: %v", err)
+		klog.ErrorS(err, "Unable to initialize command options")
+		os.Exit(1)
 	}
 	ccmOptions.KubeCloudShared.CloudProvider.Name = ccm.ProviderName
 
@@ -53,18 +54,23 @@ func main() {
 		controllerInitializers[name] = constructor
 	}
 
-	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, controllerInitializers, names.CCMControllerAliases(), cliflag.NamedFlagSets{}, wait.NeverStop)
+	command := app.NewCloudControllerManagerCommand(
+		ccmOptions, cloudInitializer, controllerInitializers, names.CCMControllerAliases(),
+		cliflag.NamedFlagSets{}, wait.NeverStop,
+	)
 	os.Exit(cli.Run(command))
 }
 
-func cloudInitializer(config *config.CompletedConfig) cloudprovider.Interface {
-	cloudConfig := config.ComponentConfig.KubeCloudShared.CloudProvider
+func cloudInitializer(completed *config.CompletedConfig) cloudprovider.Interface {
+	cloudConfig := completed.ComponentConfig.KubeCloudShared.CloudProvider
 	cloud, err := cloudprovider.InitCloudProvider(cloudConfig.Name, cloudConfig.CloudConfigFile)
 	if err != nil {
-		klog.Fatalf("Cloud provider could not be initialized: %v", err)
+		klog.ErrorS(err, "Cloud provider could not be initialized")
+		os.Exit(1)
 	}
 	if cloud == nil {
-		klog.Fatalf("Cloud provider is nil")
+		klog.ErrorS(nil, "Cloud provider is nil")
+		os.Exit(1)
 	}
 	return cloud
 }

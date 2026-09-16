@@ -208,7 +208,7 @@ func (r *machineScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			if volume.Status != "detached" {
+			if volume.Status != cloud.VolumeStatusDetached {
 				log.Info("Waiting for OS volume clone", "volumeID", volume.ID, "state", volume.Status)
 				setInstanceReadyFalse(verdaMachine, "WaitingForOSVolume", fmt.Sprintf("OS volume clone %s is in state %q", volume.ID, volume.Status))
 				return ctrl.Result{RequeueAfter: instancePollInterval}, nil
@@ -242,7 +242,7 @@ func (r *machineScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 	verdaMachine.Status.Addresses = instanceAddresses(instance)
 
 	switch instance.Status {
-	case "running":
+	case cloud.StatusRunning:
 		conditions.Set(verdaMachine, metav1.Condition{
 			Type:   infrav1.InstanceReadyCondition,
 			Status: metav1.ConditionTrue,
@@ -252,7 +252,7 @@ func (r *machineScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 		log.Info("Verda instance is running", "instanceID", instance.ID, "ip", instance.IP)
 		return ctrl.Result{}, nil
 
-	case "no_capacity":
+	case cloud.StatusNoCapacity:
 		// The instance never ran. Drop it and try again later; capacity on a
 		// GPU cloud comes and goes.
 		log.Info("No capacity for instance type, will retry", "instanceID", instance.ID, "instanceType", verdaMachine.Spec.InstanceType)
@@ -265,7 +265,7 @@ func (r *machineScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 		setInstanceReadyFalse(verdaMachine, NoCapacityReason, fmt.Sprintf("Verda has no capacity for instance type %s in %s; retrying", verdaMachine.Spec.InstanceType, verdaCluster.Spec.Location))
 		return ctrl.Result{RequeueAfter: noCapacityRetryInterval}, nil
 
-	case "error", "discontinued", "notfound":
+	case cloud.StatusError, cloud.StatusDiscontinued, cloud.StatusNotFound:
 		// Terminal from the provider's point of view: surface it and stop
 		// polling. A MachineHealthCheck (or the user) remediates by deleting the Machine.
 		reason := InstanceFailedReason
@@ -292,7 +292,7 @@ func (r *machineScope) resyncInstance(ctx context.Context, verdaMachine *infrav1
 		return ctrl.Result{}, err
 	}
 	if instance == nil {
-		instance = &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: "notfound"}
+		instance = &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: cloud.StatusNotFound}
 	}
 	verdaMachine.Status.InstanceState = instance.Status
 	if instance.IP != "" {
@@ -300,14 +300,14 @@ func (r *machineScope) resyncInstance(ctx context.Context, verdaMachine *infrav1
 	}
 
 	switch {
-	case instance.Status == "running":
+	case instance.Status == cloud.StatusRunning:
 		conditions.Set(verdaMachine, metav1.Condition{Type: infrav1.InstanceReadyCondition, Status: metav1.ConditionTrue, Reason: clusterv1.ReadyReason})
 	case instanceGone(instance):
 		if conditions.GetReason(verdaMachine, infrav1.InstanceReadyCondition) != InstanceTerminatedReason {
 			log.Info("Verda instance is gone; the Machine needs remediation", "instanceID", instance.ID, "state", instance.Status)
 		}
 		setInstanceReadyFalse(verdaMachine, InstanceTerminatedReason, fmt.Sprintf("Verda instance %s is in state %q; delete the Machine to replace it", instance.ID, instance.Status))
-	case instance.Status == "error":
+	case instance.Status == cloud.StatusError:
 		setInstanceReadyFalse(verdaMachine, InstanceFailedReason, fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
 	default:
 		// offline, pending, provisioning after a reboot, ...: not serving right now.
@@ -330,7 +330,7 @@ func (r *machineScope) findInstance(ctx context.Context, verdaMachine *infrav1.V
 		}
 		// The recorded instance is gone; report it as terminal rather than
 		// silently replacing it.
-		return &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: "notfound"}, nil
+		return &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: cloud.StatusNotFound}, nil
 	}
 
 	instance, err := r.cloud.FindInstanceByTag(ctx, cloud.TagMachine, machineTagValue(verdaMachine))
@@ -441,7 +441,7 @@ func (r *machineScope) ensureOSVolume(ctx context.Context, verdaCluster *infrav1
 	}
 
 	cond := metav1.Condition{Type: infrav1.OSVolumeReadyCondition, Status: metav1.ConditionFalse, Reason: "Cloning", Message: fmt.Sprintf("OS volume %s is in state %q", volume.ID, volume.Status)}
-	if volume.Status == "detached" || volume.Status == "attached" {
+	if volume.Status == cloud.VolumeStatusDetached || volume.Status == cloud.VolumeStatusAttached {
 		cond = metav1.Condition{Type: infrav1.OSVolumeReadyCondition, Status: metav1.ConditionTrue, Reason: clusterv1.ReadyReason}
 		if !volume.Managed {
 			// Keep the condition False until the managed tag is on, so tagging is retried.
@@ -494,7 +494,7 @@ func (r *machineScope) deleteOSVolume(ctx context.Context, verdaMachine *infrav1
 		verdaMachine.Status.OSVolumeID = ""
 		return nil
 	}
-	if volume.Status != "deleting" && volume.Status != "deleted" {
+	if volume.Status != cloud.VolumeStatusDeleting && volume.Status != cloud.VolumeStatusDeleted {
 		ctrl.LoggerFrom(ctx).Info("Deleting OS volume clone", "volumeID", id)
 		if err := r.cloud.DeleteVolume(ctx, id); err != nil {
 			return err
@@ -528,7 +528,7 @@ func (r *machineScope) resolveOSVolume(ctx context.Context, idOrName string) (st
 }
 
 func dataVolumes(verdaMachine *infrav1.VerdaMachine) []cloud.DataVolumeSpec {
-	var out []cloud.DataVolumeSpec
+	out := make([]cloud.DataVolumeSpec, 0, len(verdaMachine.Spec.AdditionalVolumes))
 	for _, v := range verdaMachine.Spec.AdditionalVolumes {
 		out = append(out, cloud.DataVolumeSpec{Name: v.Name, SizeGB: v.SizeGB, Type: v.Type})
 	}
@@ -571,7 +571,7 @@ func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav
 	}
 	if instance != nil && !instanceGone(instance) {
 		verdaMachine.Status.InstanceState = instance.Status
-		if instance.Status != "deleting" {
+		if instance.Status != cloud.StatusDeleting {
 			log.Info("Deleting Verda instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
@@ -604,7 +604,7 @@ func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav
 // Verda keeps deleted instances queryable with status "discontinued".
 func instanceGone(instance *cloud.Instance) bool {
 	switch instance.Status {
-	case "notfound", "discontinued", "deleted":
+	case cloud.StatusNotFound, cloud.StatusDiscontinued, cloud.StatusDeleted:
 		return true
 	}
 	return false

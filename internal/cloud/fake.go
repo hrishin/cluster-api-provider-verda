@@ -81,7 +81,7 @@ func (f *Fake) FindInstanceByHostname(_ context.Context, hostname string) (*Inst
 		if inst.Hostname != hostname {
 			continue
 		}
-		if inst.Status == "discontinued" {
+		if inst.Status == StatusDiscontinued {
 			gone = inst
 			continue
 		}
@@ -101,7 +101,7 @@ func (f *Fake) FindInstanceByTag(_ context.Context, key, value string) (*Instanc
 		if inst.Tags[key] != value {
 			continue
 		}
-		if inst.Status == "discontinued" {
+		if inst.Status == StatusDiscontinued {
 			gone = inst
 			continue
 		}
@@ -117,7 +117,7 @@ func (f *Fake) CreateInstance(_ context.Context, spec InstanceSpec) (*Instance, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, existing := range f.Instances {
-		if existing.Hostname == spec.Hostname && existing.Status != "discontinued" && existing.Tags[TagManagedBy] != ManagedByValue {
+		if existing.Hostname == spec.Hostname && existing.Status != StatusDiscontinued && existing.Tags[TagManagedBy] != ManagedByValue {
 			return nil, fmt.Errorf("instance %s: %w", existing.ID, ErrHostnameInUse)
 		}
 	}
@@ -164,9 +164,9 @@ func (f *Fake) DeleteInstance(_ context.Context, id string) error {
 	}
 	if ok {
 		// Verda deletes the OS volume together with the instance and keeps the
-		// instance queryable as "discontinued".
+		// instance queryable as StatusDiscontinued.
 		delete(f.Volumes, inst.OSVolumeID)
-		inst.Status = "discontinued"
+		inst.Status = StatusDiscontinued
 	}
 	return nil
 }

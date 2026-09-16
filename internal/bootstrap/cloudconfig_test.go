@@ -125,7 +125,7 @@ func TestLargeScriptIsCompressed(t *testing.T) {
 	// Content that does not compress must be rejected up front.
 	var sb strings.Builder
 	x := uint32(2463534242)
-	for i := 0; i < 80*1024; i++ {
+	for range 80 * 1024 {
 		x ^= x << 13
 		x ^= x >> 17
 		x ^= x << 5
@@ -196,7 +196,7 @@ runcmd:
 		t.Fatal(err)
 	}
 	compressed = strings.ReplaceAll(compressed, "/run/capi-bootstrap.sh", filepath.Join(root, "unpacked.sh"))
-	os.Remove(filepath.Join(root, "ran"))
+	_ = os.Remove(filepath.Join(root, "ran"))
 	if out, err := exec.Command("bash", "-c", compressed).CombinedOutput(); err != nil {
 		t.Fatalf("compressed script failed: %v\n%s", err, out)
 	}

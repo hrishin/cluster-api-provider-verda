@@ -26,7 +26,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -41,8 +41,8 @@ const ConfigPath = "/etc/haproxy/haproxy.cfg"
 // Config renders haproxy.cfg for the given backend IPs. Backends are sorted
 // so the output is stable and comparable.
 func Config(backends []string) string {
-	sorted := append([]string(nil), backends...)
-	sort.Strings(sorted)
+	sorted := slices.Clone(backends)
+	slices.Sort(sorted)
 
 	var b strings.Builder
 	b.WriteString(`# Managed by cluster-api-provider-verda. Do not edit.

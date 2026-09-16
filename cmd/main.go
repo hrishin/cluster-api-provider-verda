@@ -75,13 +75,16 @@ func main() {
 	var credentialsFile string
 	var concurrency int
 	flag.StringVar(&watchFilterValue, "watch-filter", "",
-		fmt.Sprintf("Label value that the controller watches to reconcile cluster-api objects. Label key is always %s. If unspecified, the controller watches for all cluster-api objects.", clusterv1.WatchLabel))
+		fmt.Sprintf("Label value that the controller watches to reconcile cluster-api objects. Label key is always %s. "+
+			"If unspecified, the controller watches for all cluster-api objects.", clusterv1.WatchLabel))
 	flag.StringVar(&credentialsFile, "credentials-file", "",
-		fmt.Sprintf("Path to a Verda credentials file (default ~/.verda/credentials). %s and %s take precedence when set.", cloud.EnvClientID, cloud.EnvClientSecret))
+		fmt.Sprintf("Path to a Verda credentials file (default ~/.verda/credentials). %s and %s take precedence when set.",
+			cloud.EnvClientID, cloud.EnvClientSecret))
 	flag.IntVar(&concurrency, "concurrency", 10, "Number of VerdaMachines to reconcile concurrently.")
 	var watchNamespace string
 	flag.StringVar(&watchNamespace, "namespace", "",
-		"Namespace that the controller watches to reconcile cluster-api objects. If unspecified, the controller watches for cluster-api objects across all namespaces.")
+		"Namespace that the controller watches to reconcile cluster-api objects. "+
+			"If unspecified, the controller watches for cluster-api objects across all namespaces.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
