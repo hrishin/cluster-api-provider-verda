@@ -1,8 +1,8 @@
 name: E2E Tests
 
+# Creates real clusters on Verda; run manually with the repository secrets set.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions: {}
 
@@ -10,8 +10,14 @@ jobs:
   test-e2e:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    name: Run against Verda
     runs-on: ubuntu-latest
+    env:
+      VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
+      VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
+      E2E_VERDA_LOCATION: ${{ vars.E2E_VERDA_LOCATION }}
+      E2E_VERDA_OS_VOLUME_ID: ${{ vars.E2E_VERDA_OS_VOLUME_ID }}
+      E2E_VERDA_SSH_KEY_ID: ${{ vars.E2E_VERDA_SSH_KEY_ID }}
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -23,16 +29,21 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      - name: Install kind and clusterctl
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH) && chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          curl -L https://github.com/kubernetes-sigs/cluster-api/releases/latest/download/clusterctl-linux-$(go env GOARCH) -o clusterctl && chmod +x clusterctl && sudo mv clusterctl /usr/local/bin/
 
-      - name: Verify kind installation
-        run: kind version
-
-      - name: Running Test e2e
+      - name: Create the management cluster
         run: |
-          go mod tidy
-          make test-e2e
+          kind create cluster --name e2e
+          clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm
+          make install
+          ENABLE_WEBHOOKS=false go run ./cmd/main.go > manager.log 2>&1 &
+
+      - name: Run e2e
+        run: make test-e2e
+
+      - name: Manager log
+        if: always()
+        run: tail -n 200 manager.log
