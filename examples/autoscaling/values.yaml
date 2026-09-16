@@ -2,10 +2,10 @@ cloudProvider: clusterapi
 # CAPI objects are read in-cluster (management cluster); the workload cluster
 # is reached through the kubeconfig Secret that KCP maintains.
 clusterAPIMode: kubeconfig-incluster
-clusterAPIKubeconfigSecret: capi-ha-kubeconfig
+clusterAPIKubeconfigSecret: demo-kubeconfig
 clusterAPIWorkloadKubeconfigPath: /etc/kubernetes/value
 autoDiscovery:
-  clusterName: capi-ha
+  clusterName: demo
   namespace: default
 extraArgs:
   logtostderr: true

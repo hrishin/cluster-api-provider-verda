@@ -1,0 +1,4 @@
+# Placeholder so the README command works offline: replace with the Calico
+# manifest for your Kubernetes version, e.g.
+#   curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.30.0/manifests/calico.yaml
+# The default template's pod CIDR (192.168.0.0/16) matches Calico's default.

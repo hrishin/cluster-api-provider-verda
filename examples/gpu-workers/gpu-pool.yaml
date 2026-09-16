@@ -1,0 +1,84 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-gpu
+spec:
+  template:
+    spec:
+      instanceType: 1RTXPRO6000.30V
+      osVolumeID: ${VERDA_OS_VOLUME_ID}
+      sshKeyIDs:
+        - ${VERDA_SSH_KEY_ID}
+      spot: true
+      spotDiscontinuePolicy: delete_permanently
+      additionalVolumes:
+        - name: data
+          sizeGB: 500
+          type: NVMe
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-gpu
+spec:
+  template:
+    spec:
+      preKubeadmCommands:
+        # Format and mount the data volume on first boot.
+        - 'DEV=$(lsblk -dpno NAME,SIZE | awk "\$2 ~ /500G/ {print \$1; exit}"); if [ -n "$DEV" ] && ! blkid "$DEV" >/dev/null; then mkfs.ext4 -F "$DEV"; fi'
+        - 'DEV=$(lsblk -dpno NAME,SIZE | awk "\$2 ~ /500G/ {print \$1; exit}"); if [ -n "$DEV" ]; then mkdir -p /data && grep -q " /data " /etc/fstab || echo "$DEV /data ext4 defaults,nofail 0 2" >> /etc/fstab; mount -a; fi'
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: cloud-provider
+              value: external
+            - name: provider-id
+              value: "verda://{{ ds.meta_data.hostname }}"
+            - name: node-labels
+              value: "workload=gpu"
+          taints:
+            - key: nvidia.com/gpu
+              effect: NoSchedule
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-gpu
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: 1
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}-gpu
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: VerdaMachineTemplate
+        name: ${CLUSTER_NAME}-gpu
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-gpu
+spec:
+  clusterName: ${CLUSTER_NAME}
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-gpu
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 100%
+  checks:
+    nodeStartupTimeoutSeconds: 1200
+    unhealthyNodeConditions:
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
