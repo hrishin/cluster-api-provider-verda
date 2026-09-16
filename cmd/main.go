@@ -43,6 +43,7 @@ import (
 	"github.com/hrishin/verda-capi/internal/cloud"
 	"github.com/hrishin/verda-capi/internal/controller"
 	"github.com/hrishin/verda-capi/internal/loadbalancer"
+	webhookv1beta1 "github.com/hrishin/verda-capi/internal/webhook/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -221,6 +222,34 @@ func main() {
 	}).SetupWithManager(ctx, mgr, crcontroller.Options{MaxConcurrentReconciles: concurrency}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "verdamachine")
 		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1beta1.SetupVerdaClusterWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "VerdaCluster")
+			os.Exit(1)
+		}
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1beta1.SetupVerdaMachineWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "VerdaMachine")
+			os.Exit(1)
+		}
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1beta1.SetupVerdaMachineTemplateWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "VerdaMachineTemplate")
+			os.Exit(1)
+		}
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1beta1.SetupVerdaClusterTemplateWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "VerdaClusterTemplate")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 
