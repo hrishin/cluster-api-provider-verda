@@ -42,6 +42,7 @@ import (
 	infrastructurev1beta1 "github.com/hrishin/verda-capi/api/v1beta1"
 	"github.com/hrishin/verda-capi/internal/cloud"
 	"github.com/hrishin/verda-capi/internal/controller"
+	"github.com/hrishin/verda-capi/internal/loadbalancer"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -206,6 +207,8 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 	if err := (&controller.VerdaClusterReconciler{
 		Client:           mgr.GetClient(),
+		Cloud:            verdaClient,
+		LoadBalancer:     &loadbalancer.SSHUpdater{},
 		WatchFilterValue: watchFilterValue,
 	}).SetupWithManager(ctx, mgr, crcontroller.Options{MaxConcurrentReconciles: concurrency}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "verdacluster")

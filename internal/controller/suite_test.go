@@ -42,6 +42,7 @@ import (
 
 	infrastructurev1beta1 "github.com/hrishin/verda-capi/api/v1beta1"
 	"github.com/hrishin/verda-capi/internal/cloud"
+	"github.com/hrishin/verda-capi/internal/loadbalancer"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -55,6 +56,7 @@ var (
 	cfg       *rest.Config
 	k8sClient client.Client
 	fakeCloud *cloud.Fake
+	fakeLB    *loadbalancer.FakeUpdater
 )
 
 func TestControllers(t *testing.T) {
@@ -106,7 +108,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	fakeCloud = cloud.NewFake()
-	Expect((&VerdaClusterReconciler{Client: mgr.GetClient()}).
+	fakeLB = &loadbalancer.FakeUpdater{}
+	Expect((&VerdaClusterReconciler{Client: mgr.GetClient(), Cloud: fakeCloud, LoadBalancer: fakeLB}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
 	Expect((&VerdaMachineReconciler{Client: mgr.GetClient(), Cloud: fakeCloud}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())

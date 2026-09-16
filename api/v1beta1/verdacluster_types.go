@@ -35,6 +35,16 @@ const (
 	// ControlPlaneEndpointReadyCondition reports whether a control plane endpoint
 	// is available in spec.controlPlaneEndpoint.
 	ControlPlaneEndpointReadyCondition = "ControlPlaneEndpointReady"
+
+	// LoadBalancerReadyCondition reports whether the provider-managed control
+	// plane load balancer instance is running and its backends are in sync.
+	LoadBalancerReadyCondition = "LoadBalancerReady"
+)
+
+// Defaults for the provider-managed control plane load balancer.
+const (
+	DefaultLoadBalancerInstanceType = "CPU.4V.16G"
+	DefaultLoadBalancerImage        = "ubuntu-24.04"
 )
 
 // VerdaClusterSpec defines the desired state of VerdaCluster.
@@ -48,11 +58,47 @@ type VerdaClusterSpec struct {
 
 	// controlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	//
-	// Verda does not provide a managed load balancer, so the endpoint must be
-	// supplied by the user: typically a DNS name pointing at the control plane
-	// machine(s), or the address of a load balancer managed outside of Cluster API.
+	// Verda does not provide a managed load balancer. Either enable
+	// controlPlaneLoadBalancer, in which case the provider fills this in with
+	// the address of the load balancer instance it creates, or supply it: a DNS
+	// name pointing at the control plane machine(s), or the address of a load
+	// balancer managed outside of Cluster API.
 	// +optional
 	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty,omitzero"`
+
+	// controlPlaneLoadBalancer configures a provider-managed load balancer in
+	// front of the control plane: a Verda instance running haproxy in TCP mode
+	// whose backends are kept in sync with the control plane machines.
+	// +optional
+	ControlPlaneLoadBalancer ControlPlaneLoadBalancer `json:"controlPlaneLoadBalancer,omitempty,omitzero"`
+}
+
+// ControlPlaneLoadBalancer describes the provider-managed control plane load balancer.
+// +kubebuilder:validation:MinProperties=1
+type ControlPlaneLoadBalancer struct {
+	// enabled turns on the provider-managed load balancer.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// instanceType is the Verda instance type of the load balancer. Defaults to CPU.4V.16G.
+	// +optional
+	// +kubebuilder:validation:MaxLength=64
+	InstanceType string `json:"instanceType,omitempty"`
+
+	// image is the Verda image the load balancer boots from. It must be a
+	// Debian-based image with apt access. Defaults to ubuntu-24.04.
+	// +optional
+	// +kubebuilder:validation:MaxLength=256
+	Image string `json:"image,omitempty"`
+
+	// sshKeyIDs are additional Verda SSH keys to inject into the load balancer
+	// instance, for troubleshooting. The provider always injects its own key.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=128
+	SSHKeyIDs []string `json:"sshKeyIDs,omitempty"`
 }
 
 // VerdaClusterStatus defines the observed state of VerdaCluster.
@@ -63,12 +109,42 @@ type VerdaClusterStatus struct {
 	Initialization VerdaClusterInitializationStatus `json:"initialization,omitempty,omitzero"`
 
 	// conditions represents the observations of a VerdaCluster's current state.
-	// Known condition types are Ready, ControlPlaneEndpointReady, Paused.
+	// Known condition types are Ready, ControlPlaneEndpointReady, LoadBalancerReady, Paused.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
 	// +kubebuilder:validation:MaxItems=32
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// loadBalancer holds the state of the provider-managed control plane load balancer.
+	// +optional
+	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty,omitzero"`
+}
+
+// LoadBalancerStatus describes the provider-managed control plane load balancer.
+// +kubebuilder:validation:MinProperties=1
+type LoadBalancerStatus struct {
+	// instanceID is the identifier of the Verda instance running haproxy.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	InstanceID string `json:"instanceID,omitempty"`
+
+	// startupScriptID is the identifier of the load balancer's startup script.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	StartupScriptID string `json:"startupScriptID,omitempty"`
+
+	// address is the public IP of the load balancer instance.
+	// +optional
+	// +kubebuilder:validation:MaxLength=64
+	Address string `json:"address,omitempty"`
+
+	// backends are the control plane addresses currently configured in haproxy.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=64
+	Backends []string `json:"backends,omitempty"`
 }
 
 // VerdaClusterInitializationStatus provides observations of the VerdaCluster initialization process.
@@ -86,7 +162,9 @@ type VerdaClusterInitializationStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this VerdaCluster belongs"
 // +kubebuilder:printcolumn:name="Provisioned",type="boolean",JSONPath=".status.initialization.provisioned",description="Cluster infrastructure is provisioned"
-// +kubebuilder:printcolumn:name="Endpoint",type="string",JSONPath=".spec.controlPlaneEndpoint.host",description="API endpoint",priority=1
+// +kubebuilder:printcolumn:name="Endpoint",type="string",JSONPath=".spec.controlPlaneEndpoint.host",description="API endpoint"
+// +kubebuilder:printcolumn:name="LB",type="string",JSONPath=".status.loadBalancer.instanceID",description="Load balancer instance",priority=1
+// +kubebuilder:printcolumn:name="Backends",type="string",JSONPath=".status.loadBalancer.backends",description="Load balancer backends",priority=1
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of VerdaCluster"
 
 // VerdaCluster is the Schema for the verdaclusters API.
@@ -104,6 +182,11 @@ type VerdaCluster struct {
 	// status is the observed state of VerdaCluster.
 	// +optional
 	Status VerdaClusterStatus `json:"status,omitempty,omitzero"`
+}
+
+// LoadBalancerEnabled reports whether the provider-managed load balancer is requested.
+func (c *VerdaCluster) LoadBalancerEnabled() bool {
+	return c.Spec.ControlPlaneLoadBalancer.Enabled != nil && *c.Spec.ControlPlaneLoadBalancer.Enabled
 }
 
 // GetConditions returns the set of conditions for this object.

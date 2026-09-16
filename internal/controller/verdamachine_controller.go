@@ -504,7 +504,11 @@ func setInstanceReadyFalse(verdaMachine *infrav1.VerdaMachine, reason, message s
 // Verda tag values are limited to 127 characters; namespace/name can exceed
 // that, so use a stable digest-free form and truncate only when necessary.
 func machineTagValue(verdaMachine *infrav1.VerdaMachine) string {
-	v := verdaMachine.Namespace + "/" + verdaMachine.Name
+	return truncateTag(verdaMachine.Namespace + "/" + verdaMachine.Name)
+}
+
+// truncateTag lowercases and trims a tag value to Verda's 127 character limit.
+func truncateTag(v string) string {
 	if len(v) > 127 {
 		v = v[:127]
 	}

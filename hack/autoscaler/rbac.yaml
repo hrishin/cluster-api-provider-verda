@@ -1,0 +1,23 @@
+# Lets cluster-autoscaler (clusterapi provider) read this provider's templates
+# for scale-from-zero capacity. Bind to the autoscaler's ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-autoscaler-verda-infrastructure
+rules:
+- apiGroups: ["infrastructure.cluster.x-k8s.io"]
+  resources: ["verdamachinetemplates", "verdamachines"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-autoscaler-verda-infrastructure
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-autoscaler-verda-infrastructure
+subjects:
+- kind: ServiceAccount
+  name: cluster-autoscaler-clusterapi-cluster-autoscaler
+  namespace: default

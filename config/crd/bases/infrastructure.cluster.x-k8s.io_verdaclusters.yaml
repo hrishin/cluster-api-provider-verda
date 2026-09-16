@@ -30,6 +30,15 @@ spec:
     - description: API endpoint
       jsonPath: .spec.controlPlaneEndpoint.host
       name: Endpoint
+      type: string
+    - description: Load balancer instance
+      jsonPath: .status.loadBalancer.instanceID
+      name: LB
+      priority: 1
+      type: string
+    - description: Load balancer backends
+      jsonPath: .status.loadBalancer.backends
+      name: Backends
       priority: 1
       type: string
     - description: Time duration since creation of VerdaCluster
@@ -65,9 +74,11 @@ spec:
                 description: |-
                   controlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 
-                  Verda does not provide a managed load balancer, so the endpoint must be
-                  supplied by the user: typically a DNS name pointing at the control plane
-                  machine(s), or the address of a load balancer managed outside of Cluster API.
+                  Verda does not provide a managed load balancer. Either enable
+                  controlPlaneLoadBalancer, in which case the provider fills this in with
+                  the address of the load balancer instance it creates, or supply it: a DNS
+                  name pointing at the control plane machine(s), or the address of a load
+                  balancer managed outside of Cluster API.
                 minProperties: 1
                 properties:
                   host:
@@ -81,6 +92,39 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                type: object
+              controlPlaneLoadBalancer:
+                description: |-
+                  controlPlaneLoadBalancer configures a provider-managed load balancer in
+                  front of the control plane: a Verda instance running haproxy in TCP mode
+                  whose backends are kept in sync with the control plane machines.
+                minProperties: 1
+                properties:
+                  enabled:
+                    description: enabled turns on the provider-managed load balancer.
+                    type: boolean
+                  image:
+                    description: |-
+                      image is the Verda image the load balancer boots from. It must be a
+                      Debian-based image with apt access. Defaults to ubuntu-24.04.
+                    maxLength: 256
+                    type: string
+                  instanceType:
+                    description: instanceType is the Verda instance type of the load
+                      balancer. Defaults to CPU.4V.16G.
+                    maxLength: 64
+                    type: string
+                  sshKeyIDs:
+                    description: |-
+                      sshKeyIDs are additional Verda SSH keys to inject into the load balancer
+                      instance, for troubleshooting. The provider always injects its own key.
+                    items:
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: set
                 type: object
               location:
                 description: |-
@@ -98,7 +142,7 @@ spec:
               conditions:
                 description: |-
                   conditions represents the observations of a VerdaCluster's current state.
-                  Known condition types are Ready, ControlPlaneEndpointReady, Paused.
+                  Known condition types are Ready, ControlPlaneEndpointReady, LoadBalancerReady, Paused.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -169,6 +213,35 @@ spec:
                       provisioned is true when the infrastructure provider reports that the Cluster's infrastructure is fully provisioned.
                       NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Cluster provisioning.
                     type: boolean
+                type: object
+              loadBalancer:
+                description: loadBalancer holds the state of the provider-managed
+                  control plane load balancer.
+                minProperties: 1
+                properties:
+                  address:
+                    description: address is the public IP of the load balancer instance.
+                    maxLength: 64
+                    type: string
+                  backends:
+                    description: backends are the control plane addresses currently
+                      configured in haproxy.
+                    items:
+                      maxLength: 64
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                  instanceID:
+                    description: instanceID is the identifier of the Verda instance
+                      running haproxy.
+                    maxLength: 128
+                    type: string
+                  startupScriptID:
+                    description: startupScriptID is the identifier of the load balancer's
+                      startup script.
+                    maxLength: 128
+                    type: string
                 type: object
             type: object
         type: object

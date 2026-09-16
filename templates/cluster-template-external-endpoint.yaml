@@ -1,16 +1,17 @@
-# Default flavor: kubeadm control plane (HA-capable) + one MachineDeployment on
-# Verda. Every machine boots from a clone of a prebuilt OS volume (for example
-# one produced by image-builder) that already contains kubeadm, kubelet and
-# containerd. The control plane sits behind a provider-managed haproxy
-# instance, so no DNS or external load balancer is needed.
+# Flavor "external-endpoint": like the default flavor, but without the
+# provider-managed load balancer. CONTROL_PLANE_ENDPOINT_HOST must be a DNS
+# name or IP you control that routes to the control plane machine(s). For a
+# single control plane node the template also maps the name to the node itself
+# in /etc/hosts so kubeadm can initialise before DNS exists; workers need the
+# name to resolve as well.
 #
 # Required variables:
-#   CLUSTER_NAME, KUBERNETES_VERSION, VERDA_LOCATION, VERDA_OS_VOLUME_ID,
-#   VERDA_SSH_KEY_ID
+#   CLUSTER_NAME, KUBERNETES_VERSION, CONTROL_PLANE_ENDPOINT_HOST,
+#   VERDA_LOCATION, VERDA_OS_VOLUME_ID, VERDA_SSH_KEY_ID
 # Optional:
 #   CONTROL_PLANE_MACHINE_COUNT (1), WORKER_MACHINE_COUNT (1),
 #   VERDA_CONTROL_PLANE_INSTANCE_TYPE, VERDA_WORKER_INSTANCE_TYPE,
-#   VERDA_LOAD_BALANCER_INSTANCE_TYPE (CPU.4V.16G), POD_CIDR (192.168.0.0/16)
+#   CONTROL_PLANE_ENDPOINT_PORT (6443), POD_CIDR (192.168.0.0/16)
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
@@ -34,11 +35,9 @@ metadata:
   name: ${CLUSTER_NAME}
 spec:
   location: ${VERDA_LOCATION}
-  controlPlaneLoadBalancer:
-    enabled: true
-    instanceType: ${VERDA_LOAD_BALANCER_INSTANCE_TYPE:=CPU.4V.16G}
-    sshKeyIDs:
-      - ${VERDA_SSH_KEY_ID}
+  controlPlaneEndpoint:
+    host: ${CONTROL_PLANE_ENDPOINT_HOST}
+    port: ${CONTROL_PLANE_ENDPOINT_PORT:=6443}
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VerdaMachineTemplate
@@ -66,6 +65,10 @@ spec:
         kind: VerdaMachineTemplate
         name: ${CLUSTER_NAME}-control-plane
   kubeadmConfigSpec:
+    preKubeadmCommands:
+      # Make the endpoint resolve to this node. Sufficient for a single control
+      # plane node; for HA replace with real DNS / an external load balancer.
+      - 'grep -q "${CONTROL_PLANE_ENDPOINT_HOST}" /etc/hosts || echo "$(hostname -I | cut -d" " -f1) ${CONTROL_PLANE_ENDPOINT_HOST}" >> /etc/hosts'
     initConfiguration:
       nodeRegistration:
         kubeletExtraArgs:

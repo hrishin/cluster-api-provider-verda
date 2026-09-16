@@ -1,0 +1,19 @@
+cloudProvider: clusterapi
+# CAPI objects are read in-cluster (management cluster); the workload cluster
+# is reached through the kubeconfig Secret that KCP maintains.
+clusterAPIMode: kubeconfig-incluster
+clusterAPIKubeconfigSecret: capi-ha-kubeconfig
+clusterAPIWorkloadKubeconfigPath: /etc/kubernetes/value
+autoDiscovery:
+  clusterName: capi-ha
+  namespace: default
+extraArgs:
+  logtostderr: true
+  v: 4
+  # Short timers so the scale-down is observable in a test.
+  scale-down-delay-after-add: 2m
+  scale-down-unneeded-time: 2m
+  scale-down-utilization-threshold: "0.3"
+  max-node-provision-time: 15m
+rbac:
+  clusterScoped: true

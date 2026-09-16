@@ -40,6 +40,9 @@ const (
 	TagCluster = "capi-cluster"
 	// TagMachine holds the namespaced name of the owning VerdaMachine.
 	TagMachine = "capi-machine"
+	// TagLoadBalancer holds the namespaced name of the VerdaCluster whose
+	// control plane load balancer the instance is.
+	TagLoadBalancer = "capi-loadbalancer"
 	// TagManagedBy identifies resources created by this provider.
 	TagManagedBy = "capi-managed-by"
 	// ManagedByValue is the value of TagManagedBy.
