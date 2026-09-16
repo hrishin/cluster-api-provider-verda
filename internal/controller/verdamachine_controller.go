@@ -77,7 +77,8 @@ const (
 // VerdaMachineReconciler reconciles a VerdaMachine object.
 type VerdaMachineReconciler struct {
 	client.Client
-	Cloud cloud.Client
+	// CloudFactory yields the Verda client for a cluster's credentials.
+	CloudFactory cloud.Factory
 	// WatchFilterValue is the label value used to filter events prior to reconciliation.
 	WatchFilterValue string
 }
@@ -151,13 +152,30 @@ func (r *VerdaMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}()
 
-	if !verdaMachine.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, verdaMachine)
+	identity := cloud.Identity{Namespace: verdaMachine.Namespace}
+	if verdaCluster != nil {
+		identity.SecretName = verdaCluster.IdentitySecretName()
 	}
-	return r.reconcileNormal(ctx, cluster, verdaCluster, machine, verdaMachine)
+	verdaClient, err := r.CloudFactory.ClientFor(ctx, identity)
+	if err != nil {
+		setInstanceReadyFalse(verdaMachine, "CredentialsUnavailable", err.Error())
+		return ctrl.Result{}, err
+	}
+	scope := &machineScope{VerdaMachineReconciler: r, cloud: verdaClient}
+
+	if !verdaMachine.DeletionTimestamp.IsZero() {
+		return scope.reconcileDelete(ctx, verdaMachine)
+	}
+	return scope.reconcileNormal(ctx, cluster, verdaCluster, machine, verdaMachine)
 }
 
-func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, machine *clusterv1.Machine, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
+// machineScope is a reconciler bound to the cloud client of one cluster.
+type machineScope struct {
+	*VerdaMachineReconciler
+	cloud cloud.Client
+}
+
+func (r *machineScope) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, machine *clusterv1.Machine, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// A provisioned machine only needs its instance re-checked now and then
@@ -238,7 +256,7 @@ func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *c
 		// The instance never ran. Drop it and try again later; capacity on a
 		// GPU cloud comes and goes.
 		log.Info("No capacity for instance type, will retry", "instanceID", instance.ID, "instanceType", verdaMachine.Spec.InstanceType)
-		if err := r.Cloud.DeleteInstance(ctx, instance.ID); err != nil {
+		if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 			return ctrl.Result{}, err
 		}
 		verdaMachine.Status.InstanceID = ""
@@ -267,7 +285,7 @@ func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *c
 // resyncInstance re-checks a provisioned machine's instance. Initialization
 // stays true (the contract forbids flipping it back); readiness is reported
 // through the InstanceReady and Ready conditions.
-func (r *VerdaMachineReconciler) resyncInstance(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
+func (r *machineScope) resyncInstance(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	instance, err := r.findInstance(ctx, verdaMachine)
 	if err != nil {
@@ -301,9 +319,9 @@ func (r *VerdaMachineReconciler) resyncInstance(ctx context.Context, verdaMachin
 // findInstance locates the instance backing verdaMachine, by recorded ID first
 // and then by tag, so that a create whose result was never persisted is
 // recovered rather than duplicated.
-func (r *VerdaMachineReconciler) findInstance(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (*cloud.Instance, error) {
+func (r *machineScope) findInstance(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (*cloud.Instance, error) {
 	if verdaMachine.Status.InstanceID != "" {
-		instance, err := r.Cloud.GetInstance(ctx, verdaMachine.Status.InstanceID)
+		instance, err := r.cloud.GetInstance(ctx, verdaMachine.Status.InstanceID)
 		if err == nil {
 			return instance, nil
 		}
@@ -315,7 +333,7 @@ func (r *VerdaMachineReconciler) findInstance(ctx context.Context, verdaMachine 
 		return &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: "notfound"}, nil
 	}
 
-	instance, err := r.Cloud.FindInstanceByTag(ctx, cloud.TagMachine, machineTagValue(verdaMachine))
+	instance, err := r.cloud.FindInstanceByTag(ctx, cloud.TagMachine, machineTagValue(verdaMachine))
 	if err != nil {
 		if errors.Is(err, cloud.ErrNotFound) {
 			return nil, nil
@@ -332,7 +350,7 @@ func (r *VerdaMachineReconciler) findInstance(ctx context.Context, verdaMachine 
 
 // createInstance creates the instance backing verdaMachine, booting from
 // bootFrom (an image slug or a detached OS volume ID).
-func (r *VerdaMachineReconciler) createInstance(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, machine *clusterv1.Machine, verdaMachine *infrav1.VerdaMachine, bootFrom string) (*cloud.Instance, error) {
+func (r *machineScope) createInstance(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, machine *clusterv1.Machine, verdaMachine *infrav1.VerdaMachine, bootFrom string) (*cloud.Instance, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	bootstrapData, err := r.getBootstrapData(ctx, machine)
@@ -370,29 +388,29 @@ func (r *VerdaMachineReconciler) createInstance(ctx context.Context, cluster *cl
 			"capi-role":        role,
 		},
 	}
-	return r.Cloud.CreateInstance(ctx, spec)
+	return r.cloud.CreateInstance(ctx, spec)
 }
 
 // ensureOSVolume returns the per-machine clone of spec.osVolumeID, cloning it
 // if needed. The clone is looked up by recorded ID first and then by name so
 // a clone whose ID was never persisted is reused rather than duplicated.
-func (r *VerdaMachineReconciler) ensureOSVolume(ctx context.Context, verdaCluster *infrav1.VerdaCluster, verdaMachine *infrav1.VerdaMachine) (*cloud.Volume, error) {
+func (r *machineScope) ensureOSVolume(ctx context.Context, verdaCluster *infrav1.VerdaCluster, verdaMachine *infrav1.VerdaMachine) (*cloud.Volume, error) {
 	log := ctrl.LoggerFrom(ctx)
 	name := osVolumeName(verdaMachine)
 
 	var volume *cloud.Volume
 	var err error
 	if verdaMachine.Status.OSVolumeID != "" {
-		volume, err = r.Cloud.GetVolume(ctx, verdaMachine.Status.OSVolumeID)
+		volume, err = r.cloud.GetVolume(ctx, verdaMachine.Status.OSVolumeID)
 	} else {
-		volume, err = r.Cloud.FindVolumeByName(ctx, name)
+		volume, err = r.cloud.FindVolumeByName(ctx, name)
 	}
 	if err != nil && !errors.Is(err, cloud.ErrNotFound) {
 		return nil, err
 	}
 
 	if volume == nil {
-		id, err := r.Cloud.CloneVolume(ctx, verdaMachine.Spec.OSVolumeID, name, verdaCluster.Spec.Location)
+		id, err := r.cloud.CloneVolume(ctx, verdaMachine.Spec.OSVolumeID, name, verdaCluster.Spec.Location)
 		if err != nil {
 			conditions.Set(verdaMachine, metav1.Condition{
 				Type: infrav1.OSVolumeReadyCondition, Status: metav1.ConditionFalse, Reason: "CloneFailed", Message: err.Error(),
@@ -406,7 +424,7 @@ func (r *VerdaMachineReconciler) ensureOSVolume(ctx context.Context, verdaCluste
 	verdaMachine.Status.OSVolumeID = volume.ID
 
 	if !volume.Managed {
-		if err := r.Cloud.EnsureVolumeTag(ctx, volume.ID); err != nil {
+		if err := r.cloud.EnsureVolumeTag(ctx, volume.ID); err != nil {
 			log.V(4).Info("Could not tag OS volume clone yet, will retry", "volumeID", volume.ID, "err", err.Error())
 		} else {
 			volume.Managed = true
@@ -428,16 +446,16 @@ func (r *VerdaMachineReconciler) ensureOSVolume(ctx context.Context, verdaCluste
 // ensureOSVolumeTag tags the OS volume clone as managed once it is no longer
 // cloning. Tagging fails while a clone is in progress, so it is retried here on
 // every reconcile until it succeeds.
-func (r *VerdaMachineReconciler) ensureOSVolumeTag(ctx context.Context, verdaMachine *infrav1.VerdaMachine) {
+func (r *machineScope) ensureOSVolumeTag(ctx context.Context, verdaMachine *infrav1.VerdaMachine) {
 	if verdaMachine.Status.OSVolumeID == "" || conditions.IsTrue(verdaMachine, infrav1.OSVolumeReadyCondition) {
 		return
 	}
-	volume, err := r.Cloud.GetVolume(ctx, verdaMachine.Status.OSVolumeID)
+	volume, err := r.cloud.GetVolume(ctx, verdaMachine.Status.OSVolumeID)
 	if err != nil {
 		return
 	}
 	if !volume.Managed {
-		if err := r.Cloud.EnsureVolumeTag(ctx, volume.ID); err != nil {
+		if err := r.cloud.EnsureVolumeTag(ctx, volume.ID); err != nil {
 			ctrl.LoggerFrom(ctx).V(4).Info("Could not tag OS volume clone yet, will retry", "volumeID", volume.ID, "err", err.Error())
 			return
 		}
@@ -448,12 +466,12 @@ func (r *VerdaMachineReconciler) ensureOSVolumeTag(ctx context.Context, verdaMac
 // deleteOSVolume removes the per-machine OS volume clone if it still exists.
 // Verda normally deletes the OS volume together with the instance; this covers
 // clones whose instance was never created.
-func (r *VerdaMachineReconciler) deleteOSVolume(ctx context.Context, verdaMachine *infrav1.VerdaMachine) error {
+func (r *machineScope) deleteOSVolume(ctx context.Context, verdaMachine *infrav1.VerdaMachine) error {
 	id := verdaMachine.Status.OSVolumeID
 	if id == "" {
 		return nil
 	}
-	volume, err := r.Cloud.GetVolume(ctx, id)
+	volume, err := r.cloud.GetVolume(ctx, id)
 	if err != nil {
 		if errors.Is(err, cloud.ErrNotFound) {
 			verdaMachine.Status.OSVolumeID = ""
@@ -469,7 +487,7 @@ func (r *VerdaMachineReconciler) deleteOSVolume(ctx context.Context, verdaMachin
 	}
 	if volume.Status != "deleting" && volume.Status != "deleted" {
 		ctrl.LoggerFrom(ctx).Info("Deleting OS volume clone", "volumeID", id)
-		if err := r.Cloud.DeleteVolume(ctx, id); err != nil {
+		if err := r.cloud.DeleteVolume(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -506,7 +524,7 @@ func (r *VerdaMachineReconciler) getBootstrapData(ctx context.Context, machine *
 	return value, nil
 }
 
-func (r *VerdaMachineReconciler) reconcileDelete(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
+func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	setInstanceReadyFalse(verdaMachine, clusterv1.DeletingReason, "Deleting Verda instance")
 
@@ -518,7 +536,7 @@ func (r *VerdaMachineReconciler) reconcileDelete(ctx context.Context, verdaMachi
 		verdaMachine.Status.InstanceState = instance.Status
 		if instance.Status != "deleting" {
 			log.Info("Deleting Verda instance", "instanceID", instance.ID)
-			if err := r.Cloud.DeleteInstance(ctx, instance.ID); err != nil {
+			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -528,11 +546,11 @@ func (r *VerdaMachineReconciler) reconcileDelete(ctx context.Context, verdaMachi
 	}
 
 	if scriptID := verdaMachine.Status.StartupScriptID; scriptID != "" {
-		if err := r.Cloud.DeleteStartupScript(ctx, scriptID); err != nil {
+		if err := r.cloud.DeleteStartupScript(ctx, scriptID); err != nil {
 			return ctrl.Result{}, err
 		}
 		verdaMachine.Status.StartupScriptID = ""
-	} else if err := r.Cloud.DeleteStartupScriptByName(ctx, verdaMachine.Name); err != nil {
+	} else if err := r.cloud.DeleteStartupScriptByName(ctx, verdaMachine.Name); err != nil {
 		// The ID was never recorded (crash between script and instance creation).
 		return ctrl.Result{}, err
 	}

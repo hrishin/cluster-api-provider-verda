@@ -109,9 +109,9 @@ var _ = BeforeSuite(func() {
 
 	fakeCloud = cloud.NewFake()
 	fakeLB = &loadbalancer.FakeUpdater{}
-	Expect((&VerdaClusterReconciler{Client: mgr.GetClient(), Cloud: fakeCloud, LoadBalancer: fakeLB}).
+	Expect((&VerdaClusterReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}, LoadBalancer: fakeLB}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
-	Expect((&VerdaMachineReconciler{Client: mgr.GetClient(), Cloud: fakeCloud}).
+	Expect((&VerdaMachineReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
 
 	go func() {

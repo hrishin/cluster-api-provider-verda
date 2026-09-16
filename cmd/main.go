@@ -30,6 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -78,6 +79,9 @@ func main() {
 	flag.StringVar(&credentialsFile, "credentials-file", "",
 		fmt.Sprintf("Path to a Verda credentials file (default ~/.verda/credentials). %s and %s take precedence when set.", cloud.EnvClientID, cloud.EnvClientSecret))
 	flag.IntVar(&concurrency, "concurrency", 10, "Number of VerdaMachines to reconcile concurrently.")
+	var watchNamespace string
+	flag.StringVar(&watchNamespace, "namespace", "",
+		"Namespace that the controller watches to reconcile cluster-api objects. If unspecified, the controller watches for cluster-api objects across all namespaces.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -170,7 +174,14 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	var cacheOptions cache.Options
+	if watchNamespace != "" {
+		setupLog.Info("Watching a single namespace", "namespace", watchNamespace)
+		cacheOptions.DefaultNamespaces = map[string]cache.Config{watchNamespace: {}}
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Cache:                  cacheOptions,
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -194,21 +205,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	creds, err := cloud.LoadCredentials(credentialsFile)
-	if err != nil {
-		setupLog.Error(err, "Failed to load Verda credentials")
-		os.Exit(1)
-	}
-	verdaClient, err := cloud.NewClient(creds)
-	if err != nil {
-		setupLog.Error(err, "Failed to create Verda client")
-		os.Exit(1)
+	// Global credentials are optional: clusters may bring their own through
+	// spec.identityRef.
+	cloudFactory := &cloud.SecretFactory{Reader: mgr.GetAPIReader()}
+	if creds, err := cloud.LoadCredentials(credentialsFile); err != nil {
+		setupLog.Info("No global Verda credentials; every VerdaCluster must set spec.identityRef", "reason", err.Error())
+	} else {
+		verdaClient, err := cloud.NewClient(creds)
+		if err != nil {
+			setupLog.Error(err, "Failed to create Verda client")
+			os.Exit(1)
+		}
+		cloudFactory.Global = verdaClient
 	}
 
 	ctx := ctrl.SetupSignalHandler()
 	if err := (&controller.VerdaClusterReconciler{
 		Client:           mgr.GetClient(),
-		Cloud:            verdaClient,
+		CloudFactory:     cloudFactory,
 		LoadBalancer:     &loadbalancer.SSHUpdater{},
 		WatchFilterValue: watchFilterValue,
 	}).SetupWithManager(ctx, mgr, crcontroller.Options{MaxConcurrentReconciles: concurrency}); err != nil {
@@ -217,7 +231,7 @@ func main() {
 	}
 	if err := (&controller.VerdaMachineReconciler{
 		Client:           mgr.GetClient(),
-		Cloud:            verdaClient,
+		CloudFactory:     cloudFactory,
 		WatchFilterValue: watchFilterValue,
 	}).SetupWithManager(ctx, mgr, crcontroller.Options{MaxConcurrentReconciles: concurrency}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "verdamachine")

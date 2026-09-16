@@ -67,6 +67,11 @@ In-cluster, create a Secret named `verda-credentials` in the provider namespace
 with keys `client-id`, `client-secret` (and optionally `base-url`); the
 deployment maps them to the environment variables above.
 
+Per-cluster credentials (multi-tenancy): set `VerdaCluster.spec.identityRef.name`
+to a Secret in the cluster's namespace with the same keys. Clusters without an
+`identityRef` use the manager's global credentials; if the manager has none,
+every cluster must set one. `--namespace` restricts the manager to one namespace.
+
 ## Development
 
 ```sh

@@ -69,7 +69,8 @@ const (
 // a provider-managed haproxy instance that fronts the control plane machines.
 type VerdaClusterReconciler struct {
 	client.Client
-	Cloud cloud.Client
+	// CloudFactory yields the Verda client for a cluster's credentials.
+	CloudFactory cloud.Factory
 	// LoadBalancer pushes backend updates to the haproxy instance.
 	LoadBalancer loadbalancer.Updater
 	// WatchFilterValue is the label value used to filter events prior to reconciliation.
@@ -125,13 +126,28 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}()
 
-	if !verdaCluster.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, verdaCluster)
+	verdaClient, err := r.CloudFactory.ClientFor(ctx, cloud.Identity{Namespace: verdaCluster.Namespace, SecretName: verdaCluster.IdentitySecretName()})
+	if err != nil {
+		conditions.Set(verdaCluster, metav1.Condition{
+			Type: infrav1.ControlPlaneEndpointReadyCondition, Status: metav1.ConditionFalse, Reason: "CredentialsUnavailable", Message: err.Error(),
+		})
+		return ctrl.Result{}, err
 	}
-	return r.reconcileNormal(ctx, cluster, verdaCluster)
+	scope := &clusterScope{VerdaClusterReconciler: r, cloud: verdaClient}
+
+	if !verdaCluster.DeletionTimestamp.IsZero() {
+		return scope.reconcileDelete(ctx, verdaCluster)
+	}
+	return scope.reconcileNormal(ctx, cluster, verdaCluster)
 }
 
-func (r *VerdaClusterReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
+// clusterScope is a reconciler bound to the cloud client of one cluster.
+type clusterScope struct {
+	*VerdaClusterReconciler
+	cloud cloud.Client
+}
+
+func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if verdaCluster.LoadBalancerEnabled() {
@@ -166,7 +182,7 @@ func (r *VerdaClusterReconciler) reconcileNormal(ctx context.Context, cluster *c
 
 // reconcileLoadBalancer ensures the haproxy instance exists, publishes its
 // address as the control plane endpoint and keeps its backends in sync.
-func (r *VerdaClusterReconciler) reconcileLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
+func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	keys, err := r.ensureLoadBalancerKeys(ctx, cluster, verdaCluster)
@@ -279,9 +295,9 @@ func (r *VerdaClusterReconciler) isControlPlane(ctx context.Context, vm *infrav1
 	return machine != nil && util.IsControlPlaneMachine(machine), nil
 }
 
-func (r *VerdaClusterReconciler) findLoadBalancer(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (*cloud.Instance, error) {
+func (r *clusterScope) findLoadBalancer(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (*cloud.Instance, error) {
 	if id := verdaCluster.Status.LoadBalancer.InstanceID; id != "" {
-		instance, err := r.Cloud.GetInstance(ctx, id)
+		instance, err := r.cloud.GetInstance(ctx, id)
 		if err == nil {
 			return instance, nil
 		}
@@ -290,7 +306,7 @@ func (r *VerdaClusterReconciler) findLoadBalancer(ctx context.Context, verdaClus
 		}
 		return &cloud.Instance{ID: id, Status: "notfound"}, nil
 	}
-	instance, err := r.Cloud.FindInstanceByTag(ctx, cloud.TagLoadBalancer, clusterTagValue(verdaCluster))
+	instance, err := r.cloud.FindInstanceByTag(ctx, cloud.TagLoadBalancer, clusterTagValue(verdaCluster))
 	if err != nil {
 		if errors.Is(err, cloud.ErrNotFound) {
 			return nil, nil
@@ -300,7 +316,7 @@ func (r *VerdaClusterReconciler) findLoadBalancer(ctx context.Context, verdaClus
 	return instance, nil
 }
 
-func (r *VerdaClusterReconciler) createLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, keys *loadbalancer.Keys) (*cloud.Instance, error) {
+func (r *clusterScope) createLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, keys *loadbalancer.Keys) (*cloud.Instance, error) {
 	lb := verdaCluster.Spec.ControlPlaneLoadBalancer
 	instanceType := lb.InstanceType
 	if instanceType == "" {
@@ -310,7 +326,7 @@ func (r *VerdaClusterReconciler) createLoadBalancer(ctx context.Context, cluster
 	if image == "" {
 		image = infrav1.DefaultLoadBalancerImage
 	}
-	return r.Cloud.CreateInstance(ctx, cloud.InstanceSpec{
+	return r.cloud.CreateInstance(ctx, cloud.InstanceSpec{
 		Hostname:      loadBalancerHostname(verdaCluster),
 		Description:   fmt.Sprintf("Cluster API control plane load balancer for cluster %s/%s", cluster.Namespace, cluster.Name),
 		InstanceType:  instanceType,
@@ -387,7 +403,7 @@ func keysFromSecret(secret *corev1.Secret) (*loadbalancer.Keys, error) {
 	return keys, nil
 }
 
-func (r *VerdaClusterReconciler) reconcileDelete(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
+func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Machines clean up their own instances; Cluster API waits for all
@@ -401,19 +417,19 @@ func (r *VerdaClusterReconciler) reconcileDelete(ctx context.Context, verdaClust
 		setLBNotReady(verdaCluster, clusterv1.DeletingReason, "Deleting load balancer instance")
 		if instance.Status != "deleting" {
 			log.Info("Deleting load balancer instance", "instanceID", instance.ID)
-			if err := r.Cloud.DeleteInstance(ctx, instance.ID); err != nil {
+			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
 	}
 	if id := verdaCluster.Status.LoadBalancer.StartupScriptID; id != "" {
-		if err := r.Cloud.DeleteStartupScript(ctx, id); err != nil {
+		if err := r.cloud.DeleteStartupScript(ctx, id); err != nil {
 			return ctrl.Result{}, err
 		}
 		verdaCluster.Status.LoadBalancer.StartupScriptID = ""
 	} else if verdaCluster.LoadBalancerEnabled() {
-		if err := r.Cloud.DeleteStartupScriptByName(ctx, loadBalancerHostname(verdaCluster)); err != nil {
+		if err := r.cloud.DeleteStartupScriptByName(ctx, loadBalancerHostname(verdaCluster)); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

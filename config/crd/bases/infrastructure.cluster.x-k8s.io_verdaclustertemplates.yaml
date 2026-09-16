@@ -140,6 +140,21 @@ spec:
                             type: array
                             x-kubernetes-list-type: set
                         type: object
+                      identityRef:
+                        description: |-
+                          identityRef references a Secret in the same namespace holding the Verda
+                          API credentials for this cluster, with keys client-id, client-secret and
+                          optionally base-url. When unset the credentials the manager was started
+                          with are used.
+                        properties:
+                          name:
+                            description: name is the name of the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
                       location:
                         description: |-
                           location is the Verda location code (e.g. FIN-01, FIN-02, FIN-03) in which

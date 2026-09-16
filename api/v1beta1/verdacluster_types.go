@@ -66,11 +66,27 @@ type VerdaClusterSpec struct {
 	// +optional
 	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty,omitzero"`
 
+	// identityRef references a Secret in the same namespace holding the Verda
+	// API credentials for this cluster, with keys client-id, client-secret and
+	// optionally base-url. When unset the credentials the manager was started
+	// with are used.
+	// +optional
+	IdentityRef *IdentityReference `json:"identityRef,omitempty"`
+
 	// controlPlaneLoadBalancer configures a provider-managed load balancer in
 	// front of the control plane: a Verda instance running haproxy in TCP mode
 	// whose backends are kept in sync with the control plane machines.
 	// +optional
 	ControlPlaneLoadBalancer ControlPlaneLoadBalancer `json:"controlPlaneLoadBalancer,omitempty,omitzero"`
+}
+
+// IdentityReference points at a Secret holding Verda API credentials.
+type IdentityReference struct {
+	// name is the name of the Secret.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
 }
 
 // ControlPlaneLoadBalancer describes the provider-managed control plane load balancer.
@@ -182,6 +198,15 @@ type VerdaCluster struct {
 	// status is the observed state of VerdaCluster.
 	// +optional
 	Status VerdaClusterStatus `json:"status,omitempty,omitzero"`
+}
+
+// IdentitySecretName returns the name of the identity Secret, or "" for the
+// manager's global credentials.
+func (c *VerdaCluster) IdentitySecretName() string {
+	if c.Spec.IdentityRef == nil {
+		return ""
+	}
+	return c.Spec.IdentityRef.Name
 }
 
 // LoadBalancerEnabled reports whether the provider-managed load balancer is requested.
