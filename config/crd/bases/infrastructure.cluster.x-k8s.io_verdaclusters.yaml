@@ -217,6 +217,39 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              failureDomains:
+                description: |-
+                  failureDomains is a list of failure domain objects synced from the infrastructure provider.
+                  A VerdaCluster lives in a single location, which is its only failure domain.
+                items:
+                  description: |-
+                    FailureDomain is the Schema for Cluster API failure domains.
+                    It allows controllers to understand how many failure domains a cluster can optionally span across.
+                  properties:
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: attributes is a free form map of attributes an
+                        infrastructure provider might use or require.
+                      type: object
+                    controlPlane:
+                      description: controlPlane determines if this failure domain
+                        is suitable for use by control plane machines.
+                      type: boolean
+                    name:
+                      description: name is the name of the failure domain.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               initialization:
                 description: |-
                   initialization provides observations of the VerdaCluster initialization process.

@@ -115,6 +115,9 @@ var _ = Describe("VerdaCluster and VerdaMachine lifecycle", func() {
 			g.Expect(conditions.IsTrue(verdaCluster, clusterv1.ReadyCondition)).To(BeTrue())
 			g.Expect(conditions.IsFalse(verdaCluster, clusterv1.PausedCondition)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
+		Expect(verdaCluster.Status.FailureDomains).To(HaveLen(1))
+		Expect(verdaCluster.Status.FailureDomains[0].Name).To(Equal("FIN-01"))
+		Expect(*verdaCluster.Status.FailureDomains[0].ControlPlane).To(BeTrue())
 	})
 
 	Context("with a provisioned cluster", func() {

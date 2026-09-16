@@ -59,7 +59,16 @@ rules:
   resources:
   - verdaclusters/status
   - verdamachines/status
+  - verdamachinetemplates/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - verdamachinetemplates
+  verbs:
+  - get
+  - list
+  - watch

@@ -265,6 +265,14 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if err := (&controller.VerdaMachineTemplateReconciler{
+		Client:           mgr.GetClient(),
+		CloudFactory:     cloudFactory,
+		WatchFilterValue: watchFilterValue,
+	}).SetupWithManager(ctx, mgr, crcontroller.Options{MaxConcurrentReconciles: concurrency}); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "verdamachinetemplate")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

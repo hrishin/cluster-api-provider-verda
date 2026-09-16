@@ -96,8 +96,20 @@ type InstanceSpec struct {
 	Tags          map[string]string
 }
 
+// InstanceTypeInfo is the subset of the Verda instance type catalog used for
+// node capacity.
+type InstanceTypeInfo struct {
+	InstanceType string
+	CPUs         int
+	MemoryGB     int
+	GPUs         int
+	GPUModel     string
+}
+
 // Client is the set of Verda operations used by the controllers.
 type Client interface {
+	// GetInstanceType returns catalog information for an instance type, or ErrNotFound.
+	GetInstanceType(ctx context.Context, instanceType string) (*InstanceTypeInfo, error)
 	// GetInstance returns the instance with the given ID, or ErrNotFound.
 	GetInstance(ctx context.Context, id string) (*Instance, error)
 	// FindInstanceByTag returns the first instance carrying key=value, or ErrNotFound.
@@ -151,6 +163,27 @@ func NewClient(creds Credentials) (Client, error) {
 		return nil, fmt.Errorf("creating Verda client: %w", err)
 	}
 	return &sdkClient{api: api}, nil
+}
+
+func (c *sdkClient) GetInstanceType(ctx context.Context, instanceType string) (*InstanceTypeInfo, error) {
+	types, err := c.api.InstanceTypes.Get(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("listing instance types: %w", err)
+	}
+	for i := range types {
+		t := &types[i]
+		if t.InstanceType != instanceType {
+			continue
+		}
+		return &InstanceTypeInfo{
+			InstanceType: t.InstanceType,
+			CPUs:         t.CPU.NumberOfCores,
+			MemoryGB:     t.Memory.SizeInGigabytes,
+			GPUs:         t.GPU.NumberOfGPUs,
+			GPUModel:     t.Model,
+		}, nil
+	}
+	return nil, ErrNotFound
 }
 
 func (c *sdkClient) GetInstance(ctx context.Context, id string) (*Instance, error) {

@@ -113,6 +113,8 @@ var _ = BeforeSuite(func() {
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
 	Expect((&VerdaMachineReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
+	Expect((&VerdaMachineTemplateReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}}).
+		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
 
 	go func() {
 		defer GinkgoRecover()

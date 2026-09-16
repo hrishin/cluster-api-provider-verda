@@ -33,16 +33,35 @@ type Fake struct {
 	// ScriptNames maps script IDs to names.
 	ScriptNames map[string]string
 	Volumes     map[string]*Volume
+	// InstanceTypes is the catalog served by GetInstanceType.
+	InstanceTypes map[string]*InstanceTypeInfo
 	// Created records every InstanceSpec passed to CreateInstance.
 	Created []InstanceSpec
 }
 
 // NewFake returns an empty Fake.
 func NewFake() *Fake {
-	return &Fake{Instances: map[string]*Instance{}, Scripts: map[string]string{}, ScriptNames: map[string]string{}, Volumes: map[string]*Volume{}}
+	return &Fake{
+		Instances: map[string]*Instance{}, Scripts: map[string]string{}, ScriptNames: map[string]string{}, Volumes: map[string]*Volume{},
+		InstanceTypes: map[string]*InstanceTypeInfo{
+			"CPU.4V.16G":    {InstanceType: "CPU.4V.16G", CPUs: 4, MemoryGB: 16},
+			"1H100.80S.30V": {InstanceType: "1H100.80S.30V", CPUs: 30, MemoryGB: 120, GPUs: 1, GPUModel: "H100"},
+		},
+	}
 }
 
 var _ Client = &Fake{}
+
+func (f *Fake) GetInstanceType(_ context.Context, instanceType string) (*InstanceTypeInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.InstanceTypes[instanceType]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	out := *t
+	return &out, nil
+}
 
 func (f *Fake) GetInstance(_ context.Context, id string) (*Instance, error) {
 	f.mu.Lock()

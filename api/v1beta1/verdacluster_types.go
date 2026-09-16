@@ -135,6 +135,15 @@ type VerdaClusterStatus struct {
 	// loadBalancer holds the state of the provider-managed control plane load balancer.
 	// +optional
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty,omitzero"`
+
+	// failureDomains is a list of failure domain objects synced from the infrastructure provider.
+	// A VerdaCluster lives in a single location, which is its only failure domain.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	FailureDomains []clusterv1.FailureDomain `json:"failureDomains,omitempty"`
 }
 
 // LoadBalancerStatus describes the provider-managed control plane load balancer.

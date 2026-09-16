@@ -176,8 +176,18 @@ func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 	}
 	verdaCluster.Spec.ControlPlaneEndpoint = endpoint
 	setEndpointReady(verdaCluster)
+	setFailureDomains(verdaCluster)
 	verdaCluster.Status.Initialization.Provisioned = ptr.To(true)
 	return ctrl.Result{}, nil
+}
+
+// setFailureDomains publishes the cluster's location as its single failure
+// domain so Machines carry it in status.failureDomain.
+func setFailureDomains(verdaCluster *infrav1.VerdaCluster) {
+	verdaCluster.Status.FailureDomains = []clusterv1.FailureDomain{{
+		Name:         verdaCluster.Spec.Location,
+		ControlPlane: ptr.To(true),
+	}}
 }
 
 // reconcileLoadBalancer ensures the haproxy instance exists, publishes its
@@ -222,6 +232,7 @@ func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clust
 	verdaCluster.Status.LoadBalancer.Address = instance.IP
 	verdaCluster.Spec.ControlPlaneEndpoint = clusterv1.APIEndpoint{Host: instance.IP, Port: loadbalancer.Port}
 	setEndpointReady(verdaCluster)
+	setFailureDomains(verdaCluster)
 
 	backends, err := r.controlPlaneAddresses(ctx, cluster)
 	if err != nil {

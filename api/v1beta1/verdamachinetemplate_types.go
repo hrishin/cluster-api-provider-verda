@@ -48,8 +48,49 @@ type VerdaMachineTemplateStatus struct {
 	// capacity defines the resource capacity for this machine.
 	// This value is used for autoscaling from zero operations as defined in:
 	// https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+	// It is filled in by the provider from the Verda instance type catalog.
 	// +optional
 	Capacity corev1.ResourceList `json:"capacity,omitempty"`
+
+	// nodeInfo describes the architecture and operating system of nodes
+	// created from this template, for autoscaling from zero.
+	// +optional
+	NodeInfo NodeInfo `json:"nodeInfo,omitempty,omitzero"`
+
+	// conditions represents the observations of the template's current state.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MaxItems=8
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// NodeInfo describes the nodes a template produces.
+// +kubebuilder:validation:MinProperties=1
+type NodeInfo struct {
+	// architecture is the CPU architecture of the node.
+	// +optional
+	// +kubebuilder:validation:Enum=amd64;arm64;s390x;ppc64le
+	Architecture string `json:"architecture,omitempty"`
+
+	// operatingSystem is the operating system of the node.
+	// +optional
+	// +kubebuilder:validation:Enum=linux;windows
+	OperatingSystem string `json:"operatingSystem,omitempty"`
+}
+
+// CapacityReadyCondition reports whether status.capacity was resolved from the
+// Verda instance type catalog.
+const CapacityReadyCondition = "CapacityReady"
+
+// GetConditions returns the set of conditions for this object.
+func (t *VerdaMachineTemplate) GetConditions() []metav1.Condition {
+	return t.Status.Conditions
+}
+
+// SetConditions sets the conditions on this object.
+func (t *VerdaMachineTemplate) SetConditions(conditions []metav1.Condition) {
+	t.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true
