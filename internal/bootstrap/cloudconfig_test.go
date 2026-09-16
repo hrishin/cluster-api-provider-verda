@@ -53,6 +53,13 @@ runcmd:
 users:
   - name: capi
     sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA test
+ntp:
+  servers:
+    - time.example.com
+mounts:
+  - [ /dev/vdb, /data ]
 `
 
 func TestToStartupScript(t *testing.T) {
@@ -60,7 +67,7 @@ func TestToStartupScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToStartupScript: %v", err)
 	}
-	if got, want := res.Unsupported, []string{"users"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := res.Unsupported, []string{"mounts"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Unsupported = %v, want %v", got, want)
 	}
 	for _, want := range []string{
@@ -72,6 +79,10 @@ func TestToStartupScript(t *testing.T) {
 		"base64 -d >> '/etc/motd'",
 		"kubeadm init --config /run/kubeadm/kubeadm.yaml",
 		`echo "provider-id: verda://cp-0"`,
+		"useradd --create-home 'capi'",
+		"/etc/sudoers.d/90-capi-capi",
+		"'ssh-ed25519 AAAA test'",
+		"'server time.example.com iburst'",
 		`'echo' 'list form' 'with '\''quotes'\'''`,
 	} {
 		if !strings.Contains(res.Script, want) {
@@ -94,6 +105,35 @@ func TestToStartupScriptPassesThroughShell(t *testing.T) {
 func TestToStartupScriptRejectsUnknownFormat(t *testing.T) {
 	if _, err := ToStartupScript([]byte(`{"ignition": {"version": "3.0.0"}}`), "host"); err == nil {
 		t.Fatal("expected error for ignition data")
+	}
+}
+
+func TestLargeScriptIsCompressed(t *testing.T) {
+	big := strings.Repeat("0123456789abcdef", 4096) // 64 KiB, compressible
+	cfg := "#cloud-config\nwrite_files:\n-   path: /tmp/big\n    content: " + big + "\n"
+	res, err := ToStartupScript([]byte(cfg), "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Script, "gunzip > /run/capi-bootstrap.sh") {
+		t.Error("large script should be wrapped in the gzip stub")
+	}
+	if len(res.Script) > MaxScriptSize {
+		t.Errorf("script is %d bytes, over the %d limit", len(res.Script), MaxScriptSize)
+	}
+
+	// Content that does not compress must be rejected up front.
+	var sb strings.Builder
+	x := uint32(2463534242)
+	for i := 0; i < 80*1024; i++ {
+		x ^= x << 13
+		x ^= x >> 17
+		x ^= x << 5
+		sb.WriteByte("abcdefghijklmnopqrstuvwxyz0123456789"[x%36])
+	}
+	cfg = "#cloud-config\nwrite_files:\n-   path: /tmp/big\n    content: " + sb.String() + "\n"
+	if _, err := ToStartupScript([]byte(cfg), "h"); err == nil {
+		t.Error("expected ErrScriptTooLarge for incompressible oversized content")
 	}
 }
 
@@ -147,5 +187,20 @@ runcmd:
 		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
 			t.Errorf("runcmd did not produce %s: %v", f, err)
 		}
+	}
+
+	// The compressed variant must behave identically; redirect the unpack path
+	// into the sandbox.
+	compressed, err := fit(strings.Repeat("# padding to force compression\n", 1000) + script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed = strings.ReplaceAll(compressed, "/run/capi-bootstrap.sh", filepath.Join(root, "unpacked.sh"))
+	os.Remove(filepath.Join(root, "ran"))
+	if out, err := exec.Command("bash", "-c", compressed).CombinedOutput(); err != nil {
+		t.Fatalf("compressed script failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "ran")); err != nil {
+		t.Errorf("compressed script did not run: %v", err)
 	}
 }

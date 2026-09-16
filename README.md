@@ -28,8 +28,11 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
 - **Bootstrap data is delivered as a startup script.** Verda instances take a
   shell script at boot, not cloud-init user-data. The provider converts the
   `#cloud-config` produced by the kubeadm bootstrap provider (`bootcmd`,
-  `write_files`, `runcmd`) into bash (`internal/bootstrap`). Unsupported
-  sections (`users`, `ntp`, `mounts`, …) are logged and skipped. Ignition is not supported.
+  `write_files`, `users`, `ntp`, `runcmd`) into bash (`internal/bootstrap`).
+  Unsupported sections (`mounts`, `disk_setup`, …) are logged and skipped.
+  Ignition is not supported. Verda accepts scripts up to 48 KiB, so scripts
+  over 24 KiB are shipped gzip-compressed; a script that still does not fit
+  fails the machine with a clear error.
 - **Provider ID is `verda://<hostname>`**, not the instance ID: the startup
   script has to exist before the instance does, and there is no metadata
   service on the node. Templates use
