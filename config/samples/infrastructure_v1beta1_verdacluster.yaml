@@ -1,0 +1,11 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaCluster
+metadata:
+  name: verdacluster-sample
+spec:
+  location: FIN-01
+  # Verda has no managed load balancer: point this at a DNS name or IP that
+  # routes to the control plane machine(s).
+  controlPlaneEndpoint:
+    host: k8s.example.com
+    port: 6443

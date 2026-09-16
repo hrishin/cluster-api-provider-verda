@@ -1,0 +1,11 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: verdamachinetemplate-sample
+spec:
+  template:
+    spec:
+      instanceType: CPU.4V.16G
+      image: ubuntu-24.04
+      sshKeyIDs:
+        - 00000000-0000-0000-0000-000000000000

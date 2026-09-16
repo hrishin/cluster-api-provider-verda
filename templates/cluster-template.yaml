@@ -1,0 +1,129 @@
+# Default flavor: kubeadm control plane + one MachineDeployment on Verda, with
+# every machine booting from a clone of a prebuilt OS volume (for example one
+# produced by image-builder) that already contains kubeadm, kubelet and containerd.
+#
+# Verda has no managed load balancer, so CONTROL_PLANE_ENDPOINT_HOST must be a
+# DNS name or IP you control that routes to the control plane machine(s). For a
+# single control plane node the template also maps the name to the node itself
+# in /etc/hosts so kubeadm can initialise before DNS exists.
+#
+# Required variables:
+#   CLUSTER_NAME, KUBERNETES_VERSION, CONTROL_PLANE_ENDPOINT_HOST,
+#   VERDA_LOCATION, VERDA_OS_VOLUME_ID, VERDA_SSH_KEY_ID
+# Optional:
+#   CONTROL_PLANE_MACHINE_COUNT (1), WORKER_MACHINE_COUNT (1),
+#   VERDA_CONTROL_PLANE_INSTANCE_TYPE, VERDA_WORKER_INSTANCE_TYPE,
+#   CONTROL_PLANE_ENDPOINT_PORT (6443), POD_CIDR (192.168.0.0/16)
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["${POD_CIDR:=192.168.0.0/16}"]
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: ${CLUSTER_NAME}-control-plane
+  infrastructureRef:
+    apiGroup: infrastructure.cluster.x-k8s.io
+    kind: VerdaCluster
+    name: ${CLUSTER_NAME}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaCluster
+metadata:
+  name: ${CLUSTER_NAME}
+spec:
+  location: ${VERDA_LOCATION}
+  controlPlaneEndpoint:
+    host: ${CONTROL_PLANE_ENDPOINT_HOST}
+    port: ${CONTROL_PLANE_ENDPOINT_PORT:=6443}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-control-plane
+spec:
+  template:
+    spec:
+      instanceType: ${VERDA_CONTROL_PLANE_INSTANCE_TYPE:=CPU.4V.16G}
+      osVolumeID: ${VERDA_OS_VOLUME_ID}
+      sshKeyIDs:
+        - ${VERDA_SSH_KEY_ID}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-control-plane
+spec:
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT:=1}
+  version: ${KUBERNETES_VERSION}
+  machineTemplate:
+    spec:
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: VerdaMachineTemplate
+        name: ${CLUSTER_NAME}-control-plane
+  kubeadmConfigSpec:
+    preKubeadmCommands:
+      # Make the endpoint resolve to this node. Sufficient for a single control
+      # plane node; for HA replace with real DNS / an external load balancer.
+      - 'grep -q "${CONTROL_PLANE_ENDPOINT_HOST}" /etc/hosts || echo "$(hostname -I | cut -d" " -f1) ${CONTROL_PLANE_ENDPOINT_HOST}" >> /etc/hosts'
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: provider-id
+            value: "verda://{{ ds.meta_data.hostname }}"
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: provider-id
+            value: "verda://{{ ds.meta_data.hostname }}"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+spec:
+  template:
+    spec:
+      instanceType: ${VERDA_WORKER_INSTANCE_TYPE:=CPU.4V.16G}
+      osVolumeID: ${VERDA_OS_VOLUME_ID}
+      sshKeyIDs:
+        - ${VERDA_SSH_KEY_ID}
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: provider-id
+              value: "verda://{{ ds.meta_data.hostname }}"
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT:=1}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}-md-0
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: VerdaMachineTemplate
+        name: ${CLUSTER_NAME}-md-0
