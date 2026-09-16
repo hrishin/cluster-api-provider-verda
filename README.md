@@ -139,16 +139,19 @@ manage it) and from worker nodes (to join). With a real DNS record that's
 automatic; without one, add it to the management cluster's CoreDNS `hosts`
 block and to the worker `KubeadmConfigTemplate.preKubeadmCommands`.
 
+## Further reading
+
+- [docs/node-image.md](docs/node-image.md) — what a node image needs and how to build the OS volume
+- [docs/api-versioning.md](docs/api-versioning.md) — API stability and how a new version would be added
+- [examples/](examples/) — HA cluster, autoscaling, GPU workers
+
 ## Status / not yet done
 
-- Validation and defaulting webhooks (immutability of `VerdaMachine` spec,
-  SSA dry-run support on templates for ClusterClass).
-- `VerdaMachineTemplate.status.capacity` for cluster-autoscaler scale-from-zero.
-- Multi-tenancy via a per-cluster identity reference; credentials are currently global.
-- E2E tests against a real Verda account (`test/e2e` is the kubebuilder scaffold).
-- Load balancer / HA control plane: with no Verda LB, an HA control plane needs
-  external DNS or a self-managed LB instance (a haproxy instance managed by
-  `VerdaCluster`, CAPD-style, would remove the DNS requirement entirely).
+- `VerdaMachinePool`: Verda has no autoscaling-group equivalent, so machine
+  pools are not planned; use MachineDeployments with cluster-autoscaler.
+- The cloud controller manager implements node addresses, provider ID, zone
+  and node lifecycle only; there are no Services of type LoadBalancer.
+- Only one API version (`v1beta1`); see docs/api-versioning.md.
 
 Verified live (2026-09): a single control plane + one worker in FIN-03 booted
 from an image-builder OS volume, with `Machine`s reaching `Running` and
