@@ -14,6 +14,7 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
 | `VerdaMachine` | One Verda instance. Turns the kubeadm bootstrap data into a Verda startup script, creates the instance, and reports its state, address and provider ID. |
 | `VerdaMachineTemplate` | Template for `MachineDeployment` / `KubeadmControlPlane`. |
 | `VerdaClusterTemplate` | Template for ClusterClass. |
+| `verda-cloud-controller-manager` | Runs inside workload clusters (kubelets use `--cloud-provider=external`): sets node addresses, provider ID and zone, and removes Nodes whose instance is gone. Installed by the cluster templates through a ClusterResourceSet. |
 
 ### Design notes specific to Verda
 
@@ -50,7 +51,9 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
 
 ```
 api/v1beta1/            CRD types
-internal/controller/    VerdaCluster and VerdaMachine reconcilers
+cmd/                    manager (cmd/main.go) and cloud-controller-manager
+internal/ccm/           Verda cloud provider for the cloud controller manager
+internal/controller/    VerdaCluster, VerdaMachine and VerdaMachineTemplate reconcilers
 internal/cloud/         Thin interface over the Verda SDK + in-memory fake for tests
 internal/bootstrap/     cloud-config -> startup script converter
 config/                 kustomize (CRDs, RBAC, manager)
@@ -82,6 +85,7 @@ every cluster must set one. `--namespace` restricts the manager to one namespace
 make test                    # envtest-based unit tests (fake Verda client)
 make install                 # install CRDs into the current kubeconfig context
 make run                     # run the manager locally against that cluster
+make docker-build-ccm docker-push-ccm CCM_IMG=docker.io/you/verda-cloud-controller-manager:v0.1.0
 make release-manifests IMG=ghcr.io/you/cluster-api-provider-verda:v0.1.0
                              # out/infrastructure-components.yaml, metadata.yaml, cluster-template.yaml
 ```
@@ -120,7 +124,6 @@ block and to the worker `KubeadmConfigTemplate.preKubeadmCommands`.
   SSA dry-run support on templates for ClusterClass).
 - `VerdaMachineTemplate.status.capacity` for cluster-autoscaler scale-from-zero.
 - Multi-tenancy via a per-cluster identity reference; credentials are currently global.
-- A Verda cloud-controller-manager.
 - E2E tests against a real Verda account (`test/e2e` is the kubebuilder scaffold).
 - Load balancer / HA control plane: with no Verda LB, an HA control plane needs
   external DNS or a self-managed LB instance (a haproxy instance managed by

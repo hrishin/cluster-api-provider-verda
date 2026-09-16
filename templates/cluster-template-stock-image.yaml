@@ -13,6 +13,8 @@ apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
   name: ${CLUSTER_NAME}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
 spec:
   clusterNetwork:
     pods:
@@ -98,11 +100,15 @@ spec:
     initConfiguration:
       nodeRegistration:
         kubeletExtraArgs:
+          - name: cloud-provider
+            value: external
           - name: provider-id
             value: "verda://{{ ds.meta_data.hostname }}"
     joinConfiguration:
       nodeRegistration:
         kubeletExtraArgs:
+          - name: cloud-provider
+            value: external
           - name: provider-id
             value: "verda://{{ ds.meta_data.hostname }}"
 ---
@@ -158,6 +164,8 @@ spec:
       joinConfiguration:
         nodeRegistration:
           kubeletExtraArgs:
+            - name: cloud-provider
+              value: external
             - name: provider-id
               value: "verda://{{ ds.meta_data.hostname }}"
 ---
@@ -227,3 +235,136 @@ spec:
       - type: Ready
         status: "False"
         timeoutSeconds: 300
+---
+# Cloud controller manager: installed into the workload cluster by a
+# ClusterResourceSet. Kubelets run with --cloud-provider=external and stay
+# tainted until it initialises them.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${CLUSTER_NAME}-verda-ccm-credentials
+type: addons.cluster.x-k8s.io/resource-set
+stringData:
+  credentials.yaml: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: verda-cloud-credentials
+      namespace: kube-system
+    stringData:
+      client-id: ${VERDA_CLIENT_ID}
+      client-secret: ${VERDA_CLIENT_SECRET}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${CLUSTER_NAME}-verda-ccm
+data:
+  verda-cloud-controller-manager.yaml: |
+    # Verda cloud controller manager, to be applied to a workload cluster whose
+    # kubelets run with --cloud-provider=external. Credentials come from the
+    # verda-cloud-credentials Secret in kube-system (keys: client-id, client-secret).
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: verda-cloud-controller-manager
+      namespace: kube-system
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: verda-cloud-controller-manager
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+      - kind: ServiceAccount
+        name: verda-cloud-controller-manager
+        namespace: kube-system
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: verda-cloud-controller-manager
+      namespace: kube-system
+      labels:
+        app.kubernetes.io/name: verda-cloud-controller-manager
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: verda-cloud-controller-manager
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: verda-cloud-controller-manager
+        spec:
+          serviceAccountName: verda-cloud-controller-manager
+          # Must run before the CNI and on tainted control plane nodes.
+          hostNetwork: true
+          dnsPolicy: Default
+          priorityClassName: system-cluster-critical
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+          tolerations:
+            - key: node.cloudprovider.kubernetes.io/uninitialized
+              value: "true"
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              effect: NoSchedule
+            - key: node.kubernetes.io/not-ready
+              effect: NoSchedule
+            - key: node.kubernetes.io/network-unavailable
+              effect: NoSchedule
+          containers:
+            - name: cloud-controller-manager
+              image: docker.io/hriships/verda-cloud-controller-manager:v0.1.0
+              args:
+                - --cloud-provider=verda
+                - --leader-elect=true
+                - --allow-untagged-cloud=true
+                - --use-service-account-credentials=false
+                - --secure-port=10258
+                - --v=2
+              env:
+                - name: VERDA_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: client-id
+                - name: VERDA_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: client-secret
+                - name: VERDA_BASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: base-url
+                      optional: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+---
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: ${CLUSTER_NAME}-verda-ccm
+spec:
+  clusterSelector:
+    matchLabels:
+      cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+  strategy: Reconcile
+  resources:
+    - kind: Secret
+      name: ${CLUSTER_NAME}-verda-ccm-credentials
+    - kind: ConfigMap
+      name: ${CLUSTER_NAME}-verda-ccm

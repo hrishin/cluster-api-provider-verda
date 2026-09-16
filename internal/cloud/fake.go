@@ -73,6 +73,26 @@ func (f *Fake) GetInstance(_ context.Context, id string) (*Instance, error) {
 	return copyInstance(inst), nil
 }
 
+func (f *Fake) FindInstanceByHostname(_ context.Context, hostname string) (*Instance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var gone *Instance
+	for _, inst := range f.Instances {
+		if inst.Hostname != hostname {
+			continue
+		}
+		if inst.Status == "discontinued" {
+			gone = inst
+			continue
+		}
+		return copyInstance(inst), nil
+	}
+	if gone != nil {
+		return copyInstance(gone), nil
+	}
+	return nil, ErrNotFound
+}
+
 func (f *Fake) FindInstanceByTag(_ context.Context, key, value string) (*Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

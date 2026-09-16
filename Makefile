@@ -1,5 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+# CCM_IMG is the image for the Verda cloud controller manager.
+CCM_IMG ?= cloud-controller-manager:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -126,6 +128,14 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-build-ccm
+docker-build-ccm: ## Build the cloud controller manager image.
+	$(CONTAINER_TOOL) build --build-arg BINARY=cloud-controller-manager --build-arg PACKAGE=./cmd/cloud-controller-manager -f Dockerfile.ccm -t ${CCM_IMG} .
+
+.PHONY: docker-push-ccm
+docker-push-ccm: ## Push the cloud controller manager image.
+	$(CONTAINER_TOOL) push ${CCM_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:

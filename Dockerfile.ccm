@@ -33,4 +33,4 @@ USER 65532:65532
 
 # Distroless has no shell, so the entrypoint cannot expand ${BINARY}; the
 # CCM image sets it explicitly. The manager is the default.
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/cloud-controller-manager"]

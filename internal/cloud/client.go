@@ -123,6 +123,9 @@ type Client interface {
 	GetInstanceType(ctx context.Context, instanceType string) (*InstanceTypeInfo, error)
 	// GetInstance returns the instance with the given ID, or ErrNotFound.
 	GetInstance(ctx context.Context, id string) (*Instance, error)
+	// FindInstanceByHostname returns the live instance with the given hostname,
+	// or a discontinued one if that is all there is, or ErrNotFound.
+	FindInstanceByHostname(ctx context.Context, hostname string) (*Instance, error)
 	// FindInstanceByTag returns the first instance carrying key=value, or ErrNotFound.
 	// It is used to recover from a create whose result was never persisted.
 	FindInstanceByTag(ctx context.Context, key, value string) (*Instance, error)
@@ -206,6 +209,29 @@ func (c *sdkClient) GetInstance(ctx context.Context, id string) (*Instance, erro
 		return nil, fmt.Errorf("getting instance %s: %w", id, err)
 	}
 	return toInstance(inst), nil
+}
+
+func (c *sdkClient) FindInstanceByHostname(ctx context.Context, hostname string) (*Instance, error) {
+	instances, err := c.api.Instances.Get(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("listing instances: %w", err)
+	}
+	var gone *Instance
+	for i := range instances {
+		inst := toInstance(&instances[i])
+		if inst.Hostname != hostname {
+			continue
+		}
+		if inst.Status == verda.StatusDiscontinued {
+			gone = inst
+			continue
+		}
+		return inst, nil
+	}
+	if gone != nil {
+		return gone, nil
+	}
+	return nil, ErrNotFound
 }
 
 func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*Instance, error) {
