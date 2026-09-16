@@ -18,6 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"reflect"
 	"regexp"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -26,9 +27,6 @@ import (
 )
 
 var locationCodeRe = regexp.MustCompile(`^[A-Z]{3}-[0-9]{2}$`)
-
-// Fields of a VerdaMachine that cannot change once the instance exists.
-var immutableMachineFields = []string{"instanceType", "image", "osVolumeID", "osVolumeSizeGB", "contract", "spot"}
 
 // validateMachineSpec checks a VerdaMachineSpec on its own.
 func validateMachineSpec(spec *infrav1.VerdaMachineSpec, path *field.Path) field.ErrorList {
@@ -44,6 +42,9 @@ func validateMachineSpec(spec *infrav1.VerdaMachineSpec, path *field.Path) field
 	}
 	if spec.OSVolumeID != "" && spec.OSVolumeSizeGB != 0 {
 		errs = append(errs, field.Forbidden(path.Child("osVolumeSizeGB"), "osVolumeSizeGB cannot be set with osVolumeID; a clone keeps the size of its source"))
+	}
+	if spec.SpotDiscontinuePolicy != "" && (spec.Spot == nil || !*spec.Spot) {
+		errs = append(errs, field.Forbidden(path.Child("spotDiscontinuePolicy"), "spotDiscontinuePolicy requires spot to be true"))
 	}
 	if spec.Spot != nil && *spec.Spot && spec.Contract != "" && spec.Contract != "SPOT" {
 		errs = append(errs, field.Invalid(path.Child("contract"), spec.Contract, "contract must be SPOT or empty when spot is true"))
@@ -72,6 +73,12 @@ func validateMachineSpecUpdate(oldSpec, newSpec *infrav1.VerdaMachineSpec, path 
 	}
 	if boolValue(oldSpec.Spot) != boolValue(newSpec.Spot) {
 		errs = append(errs, field.Forbidden(path.Child("spot"), "spot is immutable"))
+	}
+	if !reflect.DeepEqual(oldSpec.AdditionalVolumes, newSpec.AdditionalVolumes) {
+		errs = append(errs, field.Forbidden(path.Child("additionalVolumes"), "additionalVolumes is immutable"))
+	}
+	if oldSpec.SpotDiscontinuePolicy != newSpec.SpotDiscontinuePolicy {
+		errs = append(errs, field.Forbidden(path.Child("spotDiscontinuePolicy"), "spotDiscontinuePolicy is immutable"))
 	}
 	if oldSpec.ProviderID != "" && oldSpec.ProviderID != newSpec.ProviderID {
 		errs = append(errs, field.Forbidden(path.Child("providerID"), "providerID cannot be changed once set"))

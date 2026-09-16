@@ -285,7 +285,12 @@ var _ = Describe("VerdaMachine booting from an OS volume", func() {
 				Name: "w-0", Namespace: ns.Name,
 				Labels: map[string]string{clusterv1.ClusterNameLabel: cluster.Name},
 			},
-			Spec: infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", OSVolumeID: "golden"},
+			Spec: infrav1.VerdaMachineSpec{
+				InstanceType: "CPU.4V.16G",
+				// Reference the golden volume by its name, not its ID.
+				OSVolumeID:        "k8s-node",
+				AdditionalVolumes: []infrav1.AdditionalVolume{{Name: "data", SizeGB: 100}},
+			},
 		}
 		Expect(k8sClient.Create(ctx, verdaMachine)).To(Succeed())
 		machine = &clusterv1.Machine{
@@ -341,6 +346,7 @@ var _ = Describe("VerdaMachine booting from an OS volume", func() {
 		created := fakeCloud.Created[len(fakeCloud.Created)-1]
 		Expect(created.Image).To(Equal(cloneID))
 		Expect(created.OSVolumeSizeGB).To(BeZero())
+		Expect(created.DataVolumes).To(Equal([]cloud.DataVolumeSpec{{Name: "data", SizeGB: 100}}))
 
 		By("deleting: instance, clone and script are removed; the golden volume is untouched")
 		fakeCloud.SetStatus(instanceID, "running", "203.0.113.20")

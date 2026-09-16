@@ -21,8 +21,8 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
   floating IPs, so `VerdaCluster.spec.controlPlaneEndpoint` must be a DNS name
   or IP you control that routes to the control plane machine(s).
 - **Boot from an image-builder OS volume.** `VerdaMachine.spec.osVolumeID`
-  points at a detached OS volume (e.g. built with image-builder, containing
-  kubeadm/kubelet/containerd). The provider clones it per machine
+  points at a detached OS volume by ID or exact name (e.g. built with
+  image-builder, containing kubeadm/kubelet/containerd). The provider clones it per machine
   (`<namespace>-<machine>-os`), boots the instance from the clone and deletes
   the clone with the instance. `spec.image` boots from a stock Verda image instead.
 - **Bootstrap data is delivered as a startup script.** Verda instances take a
@@ -38,6 +38,10 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
   service on the node. Templates use
   `--provider-id=verda://{{ ds.meta_data.hostname }}`; the placeholder is
   resolved by the provider.
+- **Data volumes and spot policy.** `spec.additionalVolumes` creates data
+  volumes with the instance (deleted with it; format/mount them via
+  KubeadmConfig `diskSetup`/`mounts` or `preKubeadmCommands`);
+  `spec.spot` + `spec.spotDiscontinuePolicy` control spot behaviour.
 - **Instances and clones are tagged** (`capi-cluster`, `capi-machine`, `capi-managed-by`)
   so a create whose result was never persisted is recovered rather than duplicated,
   and the client refuses to delete anything not carrying `capi-managed-by`.

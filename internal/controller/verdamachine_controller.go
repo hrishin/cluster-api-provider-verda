@@ -371,16 +371,18 @@ func (r *machineScope) createInstance(ctx context.Context, cluster *clusterv1.Cl
 	}
 
 	spec := cloud.InstanceSpec{
-		Hostname:       verdaMachine.Name,
-		Description:    fmt.Sprintf("Cluster API %s node for cluster %s/%s", role, cluster.Namespace, cluster.Name),
-		InstanceType:   verdaMachine.Spec.InstanceType,
-		Image:          bootFrom,
-		Location:       verdaCluster.Spec.Location,
-		SSHKeyIDs:      verdaMachine.Spec.SSHKeyIDs,
-		OSVolumeSizeGB: osVolumeSize(verdaMachine),
-		Contract:       verdaMachine.Spec.Contract,
-		Spot:           ptr.Deref(verdaMachine.Spec.Spot, false),
-		StartupScript:  script.Script,
+		Hostname:              verdaMachine.Name,
+		Description:           fmt.Sprintf("Cluster API %s node for cluster %s/%s", role, cluster.Namespace, cluster.Name),
+		InstanceType:          verdaMachine.Spec.InstanceType,
+		Image:                 bootFrom,
+		Location:              verdaCluster.Spec.Location,
+		SSHKeyIDs:             verdaMachine.Spec.SSHKeyIDs,
+		OSVolumeSizeGB:        osVolumeSize(verdaMachine),
+		Contract:              verdaMachine.Spec.Contract,
+		Spot:                  ptr.Deref(verdaMachine.Spec.Spot, false),
+		SpotDiscontinuePolicy: verdaMachine.Spec.SpotDiscontinuePolicy,
+		DataVolumes:           dataVolumes(verdaMachine),
+		StartupScript:         script.Script,
 		Tags: map[string]string{
 			cloud.TagManagedBy: cloud.ManagedByValue,
 			cloud.TagCluster:   cluster.Namespace + "/" + cluster.Name,
@@ -410,7 +412,14 @@ func (r *machineScope) ensureOSVolume(ctx context.Context, verdaCluster *infrav1
 	}
 
 	if volume == nil {
-		id, err := r.cloud.CloneVolume(ctx, verdaMachine.Spec.OSVolumeID, name, verdaCluster.Spec.Location)
+		sourceID, err := r.resolveOSVolume(ctx, verdaMachine.Spec.OSVolumeID)
+		if err != nil {
+			conditions.Set(verdaMachine, metav1.Condition{
+				Type: infrav1.OSVolumeReadyCondition, Status: metav1.ConditionFalse, Reason: "SourceVolumeNotFound", Message: err.Error(),
+			})
+			return nil, err
+		}
+		id, err := r.cloud.CloneVolume(ctx, sourceID, name, verdaCluster.Spec.Location)
 		if err != nil {
 			conditions.Set(verdaMachine, metav1.Condition{
 				Type: infrav1.OSVolumeReadyCondition, Status: metav1.ConditionFalse, Reason: "CloneFailed", Message: err.Error(),
@@ -498,6 +507,34 @@ func (r *machineScope) deleteOSVolume(ctx context.Context, verdaMachine *infrav1
 // osVolumeName is the name of the per-machine OS volume clone. It includes the
 // namespace because volume names are global to the Verda account and the same
 // machine name can exist in several namespaces.
+// resolveOSVolume accepts a volume ID or an exact volume name and returns the ID.
+func (r *machineScope) resolveOSVolume(ctx context.Context, idOrName string) (string, error) {
+	if _, err := r.cloud.GetVolume(ctx, idOrName); err == nil {
+		return idOrName, nil
+	} else if !errors.Is(err, cloud.ErrNotFound) {
+		return "", err
+	}
+	volume, err := r.cloud.FindVolumeByName(ctx, idOrName)
+	if err != nil {
+		if errors.Is(err, cloud.ErrNotFound) {
+			return "", fmt.Errorf("OS volume %q not found by ID or name", idOrName)
+		}
+		return "", err
+	}
+	if !volume.IsOSVolume {
+		return "", fmt.Errorf("volume %q (%s) is not an OS volume", idOrName, volume.ID)
+	}
+	return volume.ID, nil
+}
+
+func dataVolumes(verdaMachine *infrav1.VerdaMachine) []cloud.DataVolumeSpec {
+	var out []cloud.DataVolumeSpec
+	for _, v := range verdaMachine.Spec.AdditionalVolumes {
+		out = append(out, cloud.DataVolumeSpec{Name: v.Name, SizeGB: v.SizeGB, Type: v.Type})
+	}
+	return out
+}
+
 func osVolumeName(verdaMachine *infrav1.VerdaMachine) string {
 	return verdaMachine.Namespace + "-" + verdaMachine.Name + "-os"
 }

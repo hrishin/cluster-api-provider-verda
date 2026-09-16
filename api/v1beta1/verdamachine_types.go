@@ -78,10 +78,11 @@ type VerdaMachineSpec struct {
 	// +kubebuilder:validation:MaxLength=256
 	Image string `json:"image,omitempty"`
 
-	// osVolumeID is the ID of a detached Verda OS volume to boot from, typically a
-	// node image built with image-builder that already contains kubeadm. The volume
-	// is cloned for each machine and the clone is deleted together with the instance.
-	// It must live in the cluster's location. Exactly one of image and osVolumeID must be set.
+	// osVolumeID is the ID, or the exact name, of a detached Verda OS volume to
+	// boot from, typically a node image built with image-builder that already
+	// contains kubeadm. The volume is cloned for each machine and the clone is
+	// deleted together with the instance. It must live in the cluster's
+	// location. Exactly one of image and osVolumeID must be set.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
@@ -111,6 +112,43 @@ type VerdaMachineSpec struct {
 	// at any time; the corresponding Machine is then reported as failed.
 	// +optional
 	Spot *bool `json:"spot,omitempty"`
+
+	// spotDiscontinuePolicy is what happens to the machine's volumes when Verda
+	// discontinues a spot instance: keep_detached, move_to_trash or
+	// delete_permanently. Defaults to delete_permanently because the machine is
+	// replaced rather than resumed.
+	// +optional
+	// +kubebuilder:validation:Enum=keep_detached;move_to_trash;delete_permanently
+	SpotDiscontinuePolicy string `json:"spotDiscontinuePolicy,omitempty"`
+
+	// additionalVolumes are data volumes created with the instance, attached
+	// to it and deleted together with it. They are not formatted or mounted;
+	// use KubeadmConfig diskSetup/mounts or preKubeadmCommands for that.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	AdditionalVolumes []AdditionalVolume `json:"additionalVolumes,omitempty"`
+}
+
+// AdditionalVolume describes a data volume to create with the instance.
+type AdditionalVolume struct {
+	// name identifies the volume; the Verda volume is named <machine>-<name>.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// sizeGB is the size of the volume in GB.
+	// +required
+	// +kubebuilder:validation:Minimum=1
+	SizeGB int32 `json:"sizeGB"`
+
+	// type is the Verda volume type. Defaults to NVMe.
+	// +optional
+	// +kubebuilder:validation:Enum=NVMe;HDD;NVMe_Shared;HDD_Shared
+	Type string `json:"type,omitempty"`
 }
 
 // VerdaMachineStatus defines the observed state of VerdaMachine.

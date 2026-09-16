@@ -90,10 +90,21 @@ type InstanceSpec struct {
 	OSVolumeSizeGB int32
 	Contract       string
 	Spot           bool
+	// SpotDiscontinuePolicy applies to the OS and data volumes of spot instances.
+	SpotDiscontinuePolicy string
+	// DataVolumes are created with and attached to the instance.
+	DataVolumes []DataVolumeSpec
 	// StartupScript is the script executed on first boot. It carries the
 	// Cluster API bootstrap data.
 	StartupScript string
 	Tags          map[string]string
+}
+
+// DataVolumeSpec describes a data volume to create with an instance.
+type DataVolumeSpec struct {
+	Name   string
+	SizeGB int32
+	Type   string
 }
 
 // InstanceTypeInfo is the subset of the Verda instance type catalog used for
@@ -251,9 +262,22 @@ func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Ins
 	}
 	if spec.OSVolumeSizeGB > 0 {
 		req.OSVolume = &verda.OSVolumeCreateRequest{
-			Name: spec.Hostname + "-os",
-			Size: int(spec.OSVolumeSizeGB),
+			Name:              spec.Hostname + "-os",
+			Size:              int(spec.OSVolumeSizeGB),
+			OnSpotDiscontinue: spotPolicy(spec),
 		}
+	}
+	for _, dv := range spec.DataVolumes {
+		volType := dv.Type
+		if volType == "" {
+			volType = verda.VolumeTypeNVMe
+		}
+		req.Volumes = append(req.Volumes, verda.VolumeCreateRequest{
+			Name:              spec.Hostname + "-" + dv.Name,
+			Size:              int(dv.SizeGB),
+			Type:              volType,
+			OnSpotDiscontinue: spotPolicy(spec),
+		})
 	}
 	for k, v := range spec.Tags {
 		req.Tags = append(req.Tags, verda.TagRequest{Key: k, Value: v})
@@ -286,6 +310,17 @@ func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Ins
 	return out, nil
 }
 
+// spotPolicy returns the on_spot_discontinue value to send, if any.
+func spotPolicy(spec InstanceSpec) string {
+	if !spec.Spot {
+		return ""
+	}
+	if spec.SpotDiscontinuePolicy == "" {
+		return verda.SpotDiscontinueDeletePermanent
+	}
+	return spec.SpotDiscontinuePolicy
+}
+
 func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 	inst, err := c.api.Instances.GetByID(ctx, id)
 	if err != nil {
@@ -298,10 +333,13 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 	if toInstance(inst).Tags[TagManagedBy] != ManagedByValue {
 		return fmt.Errorf("instance %s (%s): %w", id, inst.Hostname, ErrNotManaged)
 	}
+	// Delete every volume that came with the instance: the OS volume (or its
+	// clone) and the data volumes. All were created by this provider.
 	var volumes []string
 	if inst.OSVolumeID != nil {
 		volumes = append(volumes, *inst.OSVolumeID)
 	}
+	volumes = append(volumes, inst.VolumeIDs...)
 	if err := c.api.Instances.Delete(ctx, []string{id}, volumes, true); err != nil {
 		if isNotFound(err) {
 			return nil

@@ -69,6 +69,44 @@ spec:
           spec:
             description: spec is the desired state of VerdaMachine.
             properties:
+              additionalVolumes:
+                description: |-
+                  additionalVolumes are data volumes created with the instance, attached
+                  to it and deleted together with it. They are not formatted or mounted;
+                  use KubeadmConfig diskSetup/mounts or preKubeadmCommands for that.
+                items:
+                  description: AdditionalVolume describes a data volume to create
+                    with the instance.
+                  properties:
+                    name:
+                      description: name identifies the volume; the Verda volume is
+                        named <machine>-<name>.
+                      maxLength: 32
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    sizeGB:
+                      description: sizeGB is the size of the volume in GB.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    type:
+                      description: type is the Verda volume type. Defaults to NVMe.
+                      enum:
+                      - NVMe
+                      - HDD
+                      - NVMe_Shared
+                      - HDD_Shared
+                      type: string
+                  required:
+                  - name
+                  - sizeGB
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               contract:
                 description: contract selects the Verda billing contract for the instance.
                 enum:
@@ -92,10 +130,11 @@ spec:
                 type: string
               osVolumeID:
                 description: |-
-                  osVolumeID is the ID of a detached Verda OS volume to boot from, typically a
-                  node image built with image-builder that already contains kubeadm. The volume
-                  is cloned for each machine and the clone is deleted together with the instance.
-                  It must live in the cluster's location. Exactly one of image and osVolumeID must be set.
+                  osVolumeID is the ID, or the exact name, of a detached Verda OS volume to
+                  boot from, typically a node image built with image-builder that already
+                  contains kubeadm. The volume is cloned for each machine and the clone is
+                  deleted together with the instance. It must live in the cluster's
+                  location. Exactly one of image and osVolumeID must be set.
                 maxLength: 128
                 minLength: 1
                 type: string
@@ -121,6 +160,17 @@ spec:
                   spot requests a spot instance. Spot instances can be discontinued by Verda
                   at any time; the corresponding Machine is then reported as failed.
                 type: boolean
+              spotDiscontinuePolicy:
+                description: |-
+                  spotDiscontinuePolicy is what happens to the machine's volumes when Verda
+                  discontinues a spot instance: keep_detached, move_to_trash or
+                  delete_permanently. Defaults to delete_permanently because the machine is
+                  replaced rather than resumed.
+                enum:
+                - keep_detached
+                - move_to_trash
+                - delete_permanently
+                type: string
               sshKeyIDs:
                 description: sshKeyIDs are identifiers of Verda SSH keys to inject
                   into the instance.
