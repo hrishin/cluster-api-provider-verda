@@ -159,11 +159,21 @@ func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*
 	if err != nil {
 		return nil, fmt.Errorf("listing instances: %w", err)
 	}
+	// Prefer a live instance; discontinued ones stay listed for a while.
+	var gone *Instance
 	for i := range instances {
 		inst := toInstance(&instances[i])
-		if inst.Tags[key] == value {
-			return inst, nil
+		if inst.Tags[key] != value {
+			continue
 		}
+		if inst.Status == verda.StatusDiscontinued {
+			gone = inst
+			continue
+		}
+		return inst, nil
+	}
+	if gone != nil {
+		return gone, nil
 	}
 	return nil, ErrNotFound
 }

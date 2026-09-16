@@ -167,12 +167,15 @@ var _ = Describe("VerdaCluster with a managed control plane load balancer", func
 		}, timeout, interval).Should(Succeed())
 
 		By("deleting the load balancer with the cluster")
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())
+		lbScript := verdaCluster.Status.LoadBalancer.StartupScriptID
+		Expect(lbScript).NotTo(BeEmpty())
 		Expect(k8sClient.Delete(ctx, verdaCluster)).To(Succeed())
 		Eventually(func() bool {
 			return apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster))
 		}, timeout, interval).Should(BeTrue())
 		Expect(fakeCloud.Instances[lbID].Status).To(Equal("discontinued"))
-		Expect(fakeCloud.Scripts).To(BeEmpty())
+		Expect(fakeCloud.Scripts).NotTo(HaveKey(lbScript))
 	})
 
 	It("keeps the cluster provisioned while the first backend sync retries", func() {

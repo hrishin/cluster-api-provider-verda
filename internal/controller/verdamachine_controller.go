@@ -52,6 +52,26 @@ const (
 	instancePollInterval = 15 * time.Second
 	// deletePollInterval is how often a deleting instance is re-checked.
 	deletePollInterval = 10 * time.Second
+	// instanceResyncInterval is how often a provisioned machine's instance is
+	// re-checked so that an instance disappearing out of band is noticed.
+	instanceResyncInterval = 5 * time.Minute
+	// noCapacityRetryInterval is how long to wait before retrying a create
+	// that failed for lack of capacity.
+	noCapacityRetryInterval = 2 * time.Minute
+)
+
+// VerdaMachine InstanceReady condition reasons.
+const (
+	// InstanceProvisioningReason means the instance exists but is not running yet.
+	InstanceProvisioningReason = "InstanceProvisioning"
+	// InstanceTerminatedReason means the instance was discontinued or deleted
+	// outside of Cluster API. The Machine needs remediation.
+	InstanceTerminatedReason = "InstanceTerminated"
+	// InstanceFailedReason means Verda reports the instance in an error state.
+	InstanceFailedReason = "InstanceFailed"
+	// NoCapacityReason means Verda had no capacity for the instance type; the
+	// create is retried.
+	NoCapacityReason = "NoCapacity"
 )
 
 // VerdaMachineReconciler reconciles a VerdaMachine object.
@@ -140,10 +160,10 @@ func (r *VerdaMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, machine *clusterv1.Machine, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	// A machine whose instance is provisioned needs nothing further; the
-	// instance is not polled forever.
+	// A provisioned machine only needs its instance re-checked now and then
+	// so that a spot discontinuation or an out-of-band delete is surfaced.
 	if ptr.Deref(verdaMachine.Status.Initialization.Provisioned, false) {
-		return ctrl.Result{}, nil
+		return r.resyncInstance(ctx, verdaMachine)
 	}
 
 	if !ptr.Deref(cluster.Status.Initialization.InfrastructureProvisioned, false) {
@@ -207,17 +227,68 @@ func (r *VerdaMachineReconciler) reconcileNormal(ctx context.Context, cluster *c
 		log.Info("Verda instance is running", "instanceID", instance.ID, "ip", instance.IP)
 		return ctrl.Result{}, nil
 
-	case "error", "discontinued", "no_capacity", "notfound":
+	case "no_capacity":
+		// The instance never ran. Drop it and try again later; capacity on a
+		// GPU cloud comes and goes.
+		log.Info("No capacity for instance type, will retry", "instanceID", instance.ID, "instanceType", verdaMachine.Spec.InstanceType)
+		if err := r.Cloud.DeleteInstance(ctx, instance.ID); err != nil {
+			return ctrl.Result{}, err
+		}
+		verdaMachine.Status.InstanceID = ""
+		verdaMachine.Spec.ProviderID = ""
+		verdaMachine.Status.Addresses = nil
+		setInstanceReadyFalse(verdaMachine, NoCapacityReason, fmt.Sprintf("Verda has no capacity for instance type %s in %s; retrying", verdaMachine.Spec.InstanceType, verdaCluster.Spec.Location))
+		return ctrl.Result{RequeueAfter: noCapacityRetryInterval}, nil
+
+	case "error", "discontinued", "notfound":
 		// Terminal from the provider's point of view: surface it and stop
-		// polling. MachineHealthCheck or the user can remediate by deleting the Machine.
-		setInstanceReadyFalse(verdaMachine, "InstanceFailed", fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
+		// polling. A MachineHealthCheck (or the user) remediates by deleting the Machine.
+		reason := InstanceFailedReason
+		if instanceGone(instance) {
+			reason = InstanceTerminatedReason
+		}
+		setInstanceReadyFalse(verdaMachine, reason, fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
 		log.Info("Verda instance is in a terminal state", "instanceID", instance.ID, "state", instance.Status)
 		return ctrl.Result{}, nil
 
 	default:
-		setInstanceReadyFalse(verdaMachine, "InstanceProvisioning", fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
+		setInstanceReadyFalse(verdaMachine, InstanceProvisioningReason, fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
 		return ctrl.Result{RequeueAfter: instancePollInterval}, nil
 	}
+}
+
+// resyncInstance re-checks a provisioned machine's instance. Initialization
+// stays true (the contract forbids flipping it back); readiness is reported
+// through the InstanceReady and Ready conditions.
+func (r *VerdaMachineReconciler) resyncInstance(ctx context.Context, verdaMachine *infrav1.VerdaMachine) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+	instance, err := r.findInstance(ctx, verdaMachine)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if instance == nil {
+		instance = &cloud.Instance{ID: verdaMachine.Status.InstanceID, Status: "notfound"}
+	}
+	verdaMachine.Status.InstanceState = instance.Status
+	if instance.IP != "" {
+		verdaMachine.Status.Addresses = instanceAddresses(instance)
+	}
+
+	switch {
+	case instance.Status == "running":
+		conditions.Set(verdaMachine, metav1.Condition{Type: infrav1.InstanceReadyCondition, Status: metav1.ConditionTrue, Reason: clusterv1.ReadyReason})
+	case instanceGone(instance):
+		if conditions.GetReason(verdaMachine, infrav1.InstanceReadyCondition) != InstanceTerminatedReason {
+			log.Info("Verda instance is gone; the Machine needs remediation", "instanceID", instance.ID, "state", instance.Status)
+		}
+		setInstanceReadyFalse(verdaMachine, InstanceTerminatedReason, fmt.Sprintf("Verda instance %s is in state %q; delete the Machine to replace it", instance.ID, instance.Status))
+	case instance.Status == "error":
+		setInstanceReadyFalse(verdaMachine, InstanceFailedReason, fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
+	default:
+		// offline, pending, provisioning after a reboot, ...: not serving right now.
+		setInstanceReadyFalse(verdaMachine, "InstanceNotRunning", fmt.Sprintf("Verda instance %s is in state %q", instance.ID, instance.Status))
+	}
+	return ctrl.Result{RequeueAfter: instanceResyncInterval}, nil
 }
 
 // findInstance locates the instance backing verdaMachine, by recorded ID first
@@ -243,6 +314,11 @@ func (r *VerdaMachineReconciler) findInstance(ctx context.Context, verdaMachine 
 			return nil, nil
 		}
 		return nil, err
+	}
+	// Verda keeps discontinued instances around; one we gave up on (for
+	// example after no_capacity) must not be adopted again.
+	if instanceGone(instance) {
+		return nil, nil
 	}
 	return instance, nil
 }

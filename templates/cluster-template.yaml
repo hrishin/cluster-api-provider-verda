@@ -122,3 +122,49 @@ spec:
         apiGroup: infrastructure.cluster.x-k8s.io
         kind: VerdaMachineTemplate
         name: ${CLUSTER_NAME}-md-0
+---
+# Replace control plane machines whose node stops reporting (e.g. a
+# discontinued spot instance). KubeadmControlPlane performs the remediation.
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-control-plane
+spec:
+  clusterName: ${CLUSTER_NAME}
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 100%
+  checks:
+    nodeStartupTimeoutSeconds: 1200
+    unhealthyNodeConditions:
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+spec:
+  clusterName: ${CLUSTER_NAME}
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 40%
+  checks:
+    nodeStartupTimeoutSeconds: 1200
+    unhealthyNodeConditions:
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300

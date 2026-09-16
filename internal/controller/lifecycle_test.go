@@ -224,13 +224,15 @@ var _ = Describe("VerdaCluster and VerdaMachine lifecycle", func() {
 			Expect(verdaMachine.Status.FailureDomain).To(Equal("FIN-01"))
 
 			By("deleting the VerdaMachine")
+			scriptID := verdaMachine.Status.StartupScriptID
+			Expect(scriptID).NotTo(BeEmpty())
 			Expect(k8sClient.Delete(ctx, verdaMachine)).To(Succeed())
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaMachine), verdaMachine)
 				return apierrors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue(), "VerdaMachine should be gone once the instance is deleted")
 			Expect(fakeCloud.Instances[instanceID].Status).To(Equal("discontinued"))
-			Expect(fakeCloud.Scripts).To(BeEmpty(), "startup script should be cleaned up")
+			Expect(fakeCloud.Scripts).NotTo(HaveKey(scriptID), "startup script should be cleaned up")
 		})
 	})
 })
