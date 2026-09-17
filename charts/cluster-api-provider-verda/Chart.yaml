@@ -1,0 +1,17 @@
+apiVersion: v2
+name: cluster-api-provider-verda
+description: Cluster API infrastructure provider for Verda Cloud - controller manager, webhooks and CRDs.
+type: application
+version: 0.0.0
+appVersion: 0.0.0
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/hrishin/cluster-api-provider-verda
+sources:
+  - https://github.com/hrishin/cluster-api-provider-verda
+keywords:
+  - cluster-api
+  - verda
+  - infrastructure-provider
+maintainers:
+  - name: hrishin
+    url: https://github.com/hrishin

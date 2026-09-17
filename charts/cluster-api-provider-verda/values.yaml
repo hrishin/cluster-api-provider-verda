@@ -1,0 +1,100 @@
+# Default values for cluster-api-provider-verda.
+
+crds:
+  # Install the CRDs from this chart. Set to false when they are managed by
+  # the cluster-api-provider-verda-crds chart or by clusterctl.
+  install: true
+  # Annotate the CRDs with helm.sh/resource-policy: keep so that
+  # `helm uninstall` leaves them (and every VerdaCluster/VerdaMachine) in place.
+  keep: true
+
+image:
+  repository: docker.io/hriships/cluster-api-provider-verda
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1
+
+# Verda API credentials used for clusters without spec.identityRef.
+credentials:
+  # Create a Secret from the values below. Leave both empty and set
+  # existingSecret to use a Secret you manage (keys: client-id,
+  # client-secret, optionally base-url).
+  create: false
+  clientId: ""
+  clientSecret: ""
+  baseUrl: ""
+  existingSecret: ""
+
+manager:
+  # Reconcile only objects with this cluster.x-k8s.io/watch-filter label value.
+  watchFilter: ""
+  # Reconcile only this namespace (empty: all namespaces).
+  namespace: ""
+  concurrency: 10
+  leaderElection: true
+  # Log verbosity (zap -v).
+  logLevel: ""
+  extraArgs: []
+  extraEnv: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  priorityClassName: ""
+
+webhooks:
+  # Serve the validating and defaulting webhooks. Requires cert-manager.
+  enabled: true
+  certManager:
+    # Use cert-manager to issue the serving certificate (a self-signed Issuer
+    # is created). Set to false to provide your own Secret in
+    # webhooks.certManager.existingSecret and inject the CA yourself.
+    enabled: true
+    # Name of the Secret holding tls.crt/tls.key when certManager.enabled is false.
+    existingSecret: ""
+    # Use an existing Issuer/ClusterIssuer instead of the self-signed one.
+    issuerRef: {}
+    #  name: my-issuer
+    #  kind: ClusterIssuer
+
+metrics:
+  # Expose the metrics endpoint (HTTPS, authenticated with bearer tokens that
+  # are checked through TokenReview/SubjectAccessReview).
+  enabled: false
+  port: 8443
+  serviceMonitor:
+    # Create a Prometheus Operator ServiceMonitor. Requires metrics.enabled
+    # and the monitoring.coreos.com CRDs.
+    enabled: false
+    # Extra labels, e.g. to match a Prometheus serviceMonitorSelector.
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+    # Prometheus needs the metrics-reader ClusterRole bound to its
+    # ServiceAccount; set the name to create that binding.
+    prometheusServiceAccount:
+      name: ""
+      namespace: ""
+    # Skip TLS verification of the manager's self-signed serving certificate.
+    insecureSkipVerify: true
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+nameOverride: ""
+fullnameOverride: ""

@@ -1,0 +1,343 @@
+# Generated from config/ by hack/sync-charts.py. Do not edit.
+{{- if .Values.crds.install }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crds.keep }}
+    helm.sh/resource-policy: keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: verdamachines.infrastructure.cluster.x-k8s.io
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta1
+    app.kubernetes.io/name: cluster-api-provider-verda
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: VerdaMachine
+    listKind: VerdaMachineList
+    plural: verdamachines
+    shortNames:
+    - vm
+    singular: verdamachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster to which this VerdaMachine belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Machine object which owns this VerdaMachine
+      jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
+      name: Machine
+      type: string
+    - description: Machine infrastructure is provisioned
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
+      type: boolean
+    - description: Verda instance state
+      jsonPath: .status.instanceState
+      name: State
+      type: string
+    - description: Provider ID
+      jsonPath: .spec.providerID
+      name: ProviderID
+      priority: 1
+      type: string
+    - description: Time duration since creation of VerdaMachine
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: VerdaMachine is the Schema for the verdamachines API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object.
+
+              Servers should convert recognized schemas to the latest internal value, and
+
+              may reject unrecognized values.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents.
+
+              Servers may infer this from the endpoint the client submits requests to.
+
+              Cannot be updated.
+
+              In CamelCase.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the desired state of VerdaMachine.
+            properties:
+              additionalVolumes:
+                description: 'additionalVolumes are data volumes created with the instance, attached
+
+                  to it and deleted together with it. They are not formatted or mounted;
+
+                  use KubeadmConfig diskSetup/mounts or preKubeadmCommands for that.'
+                items:
+                  description: AdditionalVolume describes a data volume to create with the instance.
+                  properties:
+                    name:
+                      description: name identifies the volume; the Verda volume is named <machine>-<name>.
+                      maxLength: 32
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    sizeGB:
+                      description: sizeGB is the size of the volume in GB.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    type:
+                      description: type is the Verda volume type. Defaults to NVMe.
+                      enum:
+                      - NVMe
+                      - HDD
+                      - NVMe_Shared
+                      - HDD_Shared
+                      type: string
+                  required:
+                  - name
+                  - sizeGB
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              contract:
+                description: contract selects the Verda billing contract for the instance.
+                enum:
+                - PAY_AS_YOU_GO
+                - LONG_TERM
+                - SPOT
+                type: string
+              image:
+                description: 'image is the Verda image to boot the instance from, e.g. ubuntu-24.04-cuda-12.8-open-docker.
+
+                  kubeadm, kubelet and containerd must be installed by the bootstrap data unless
+
+                  already present in the image. Exactly one of image and osVolumeID must be set.'
+                maxLength: 256
+                minLength: 1
+                type: string
+              instanceType:
+                description: instanceType is the Verda instance type to create, e.g. 1V100.6V or CPU.4V.16G.
+                maxLength: 64
+                minLength: 1
+                type: string
+              osVolumeID:
+                description: 'osVolumeID is the ID, or the exact name, of a detached Verda OS volume to
+
+                  boot from, typically a node image built with image-builder that already
+
+                  contains kubeadm. The volume is cloned for each machine and the clone is
+
+                  deleted together with the instance. It must live in the cluster''s
+
+                  location. Exactly one of image and osVolumeID must be set.'
+                maxLength: 128
+                minLength: 1
+                type: string
+              osVolumeSizeGB:
+                description: 'osVolumeSizeGB is the size of the OS volume in GB when booting from image.
+
+                  When unset, the Verda default for the image is used. Ignored with osVolumeID
+
+                  (a clone keeps the size of its source).'
+                format: int32
+                minimum: 1
+                type: integer
+              providerID:
+                description: 'providerID must match the provider ID as seen on the node object corresponding to this machine.
+
+                  It has the format verda://<hostname>, where hostname is the name of the VerdaMachine; the
+
+                  kubelet must be started with --provider-id=verda://{{ "{{" }} ds.meta_data.hostname {{ "}}" }} (the placeholder
+
+                  is resolved by this provider when the bootstrap data is turned into a startup script).'
+                maxLength: 512
+                minLength: 1
+                type: string
+              spot:
+                description: 'spot requests a spot instance. Spot instances can be discontinued by Verda
+
+                  at any time; the corresponding Machine is then reported as failed.'
+                type: boolean
+              spotDiscontinuePolicy:
+                description: 'spotDiscontinuePolicy is what happens to the machine''s volumes when Verda
+
+                  discontinues a spot instance: keep_detached, move_to_trash or
+
+                  delete_permanently. Defaults to delete_permanently because the machine is
+
+                  replaced rather than resumed.'
+                enum:
+                - keep_detached
+                - move_to_trash
+                - delete_permanently
+                type: string
+              sshKeyIDs:
+                description: sshKeyIDs are identifiers of Verda SSH keys to inject into the instance.
+                items:
+                  maxLength: 128
+                  minLength: 1
+                  type: string
+                maxItems: 16
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - instanceType
+            type: object
+            x-kubernetes-validations:
+            - message: exactly one of image or osVolumeID must be set
+              rule: has(self.image) != has(self.osVolumeID)
+          status:
+            description: status is the observed state of VerdaMachine.
+            properties:
+              addresses:
+                description: addresses contains the associated addresses for the machine.
+                items:
+                  description: MachineAddress contains information for the node's address.
+                  properties:
+                    address:
+                      description: address is the machine address.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    type:
+                      description: type is the machine address type, one of Hostname, ExternalIP, InternalIP, ExternalDNS or InternalDNS.
+                      enum:
+                      - Hostname
+                      - ExternalIP
+                      - InternalIP
+                      - ExternalDNS
+                      - InternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+              conditions:
+                description: 'conditions represents the observations of a VerdaMachine''s current state.
+
+                  Known condition types are Ready, InstanceReady, Paused.'
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: 'lastTransitionTime is the last time the condition transitioned from one status to another.
+
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.'
+                      format: date-time
+                      type: string
+                    message:
+                      description: 'message is a human readable message indicating details about the transition.
+
+                        This may be an empty string.'
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: 'observedGeneration represents the .metadata.generation that the condition was set based upon.
+
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+
+                        with respect to the current state of the instance.'
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: 'reason contains a programmatic identifier indicating the reason for the condition''s last transition.
+
+                        Producers of specific condition types may define expected values and meanings for this field,
+
+                        and whether the values are considered a guaranteed API.
+
+                        The value should be a CamelCase string.
+
+                        This field may not be empty.'
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureDomain:
+                description: failureDomain is the failure domain the instance is running in.
+                maxLength: 256
+                minLength: 1
+                type: string
+              initialization:
+                description: 'initialization provides observations of the VerdaMachine initialization process.
+
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Machine provisioning.'
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: 'provisioned is true when the infrastructure provider reports that the Machine''s infrastructure is fully provisioned.
+
+                      NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Machine provisioning.'
+                    type: boolean
+                type: object
+              instanceID:
+                description: instanceID is the identifier of the backing Verda instance.
+                maxLength: 128
+                type: string
+              instanceState:
+                description: instanceState is the last observed state of the backing Verda instance.
+                maxLength: 64
+                type: string
+              osVolumeID:
+                description: osVolumeID is the identifier of the per-machine clone of spec.osVolumeID.
+                maxLength: 128
+                type: string
+              startupScriptID:
+                description: 'startupScriptID is the identifier of the Verda startup script that carries
+
+                  the bootstrap data for this machine. It is deleted together with the instance.'
+                maxLength: 128
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

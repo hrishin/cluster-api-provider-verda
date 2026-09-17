@@ -1,0 +1,52 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "capv.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "capv.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "capv.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: https
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: {{ .Values.metrics.serviceMonitor.insecureSkipVerify }}
+        {{- if not .Values.metrics.serviceMonitor.insecureSkipVerify }}
+        serverName: {{ include "capv.fullname" . }}-metrics.{{ .Release.Namespace }}.svc
+        {{- end }}
+{{- with .Values.metrics.serviceMonitor.prometheusServiceAccount }}
+{{- if .name }}
+---
+# Allows the Prometheus ServiceAccount to read /metrics.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "capv.fullname" $ }}-metrics-reader
+  labels:
+    {{- include "capv.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "capv.fullname" $ }}-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .name }}
+    namespace: {{ default $.Release.Namespace .namespace }}
+{{- end }}
+{{- end }}
+{{- end }}

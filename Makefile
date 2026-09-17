@@ -142,6 +142,18 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
+.PHONY: sync-charts
+sync-charts: manifests ## Regenerate the chart CRDs and RBAC from config/.
+	python3 hack/sync-charts.py
+
+.PHONY: lint-charts
+lint-charts: sync-charts ## Lint the Helm charts and check they are in sync with config/.
+	helm lint charts/cluster-api-provider-verda-crds charts/cluster-api-provider-verda
+	helm template capv charts/cluster-api-provider-verda --set credentials.create=true --set credentials.clientId=x --set credentials.clientSecret=y --set metrics.enabled=true > /dev/null
+	helm template capv charts/cluster-api-provider-verda --set crds.install=false --set webhooks.enabled=false > /dev/null
+	helm template capv charts/cluster-api-provider-verda --set metrics.enabled=true --set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.prometheusServiceAccount.name=prometheus > /dev/null
+	git diff --exit-code -- charts/ || { echo "charts are out of sync with config/: run make sync-charts and commit"; exit 1; }
+
 .PHONY: release-manifests
 release-manifests: manifests generate kustomize ## Generate the clusterctl release assets in out/.
 	mkdir -p out

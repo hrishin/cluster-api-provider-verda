@@ -1,0 +1,4 @@
+crds:
+  # Annotate the CRDs with helm.sh/resource-policy: keep so that
+  # `helm uninstall` leaves them (and every VerdaCluster/VerdaMachine) in place.
+  keep: true

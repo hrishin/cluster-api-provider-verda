@@ -100,6 +100,23 @@ make release-manifests IMG=ghcr.io/you/cluster-api-provider-verda:v0.1.0
                              # out/infrastructure-components.yaml, metadata.yaml, cluster-template.yaml
 ```
 
+### Install with Helm
+
+Two charts are published as OCI artifacts on Docker Hub (see `charts/`):
+`cluster-api-provider-verda` (manager, webhooks, RBAC and by default the CRDs)
+and `cluster-api-provider-verda-crds` (CRDs only, for CRD lifecycle managed
+separately; then install the main chart with `--set crds.install=false`).
+
+```sh
+helm install capv oci://registry-1.docker.io/hriships/cluster-api-provider-verda \
+  --version <version> -n capv-system --create-namespace \
+  --set credentials.create=true --set credentials.clientId=$VERDA_CLIENT_ID --set credentials.clientSecret=$VERDA_CLIENT_SECRET
+```
+
+Cluster API core and the kubeadm providers must already be installed
+(`clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm`).
+Optional values: `metrics.enabled` + `metrics.serviceMonitor.enabled` for Prometheus.
+
 ### Install with clusterctl
 
 Releases publish `infrastructure-components.yaml`, `metadata.yaml` and the

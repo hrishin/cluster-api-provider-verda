@@ -1,0 +1,16 @@
+cluster-api-provider-verda {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }}.
+
+{{- if not (or .Values.credentials.create .Values.credentials.existingSecret) }}
+
+No global Verda credentials were configured. Either:
+  - set credentials.create=true with credentials.clientId / credentials.clientSecret,
+  - or set credentials.existingSecret to a Secret with keys client-id and client-secret,
+  - or give every VerdaCluster a spec.identityRef.
+{{- end }}
+{{- if and .Values.webhooks.enabled .Values.webhooks.certManager.enabled }}
+
+Webhooks are served with a certificate issued by cert-manager; make sure cert-manager is installed.
+{{- end }}
+
+Create a cluster with clusterctl, e.g.:
+  clusterctl generate cluster demo --infrastructure verda --kubernetes-version v1.35.8 | kubectl apply -f -
