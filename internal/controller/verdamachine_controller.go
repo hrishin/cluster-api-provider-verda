@@ -82,14 +82,28 @@ const (
 // request before sending it again.
 const deleteRetryInterval = 5 * time.Minute
 
+// deleteRequestedAnnotation records when a delete was last sent to Verda for
+// the instance named by the suffix (machine, lb, servicelb).
+const deleteRequestedAnnotation = "verda.cluster.x-k8s.io/delete-requested-at"
+
 // deleteRequestDue reports whether a delete request should be (re)sent: never
-// sent yet, or sent long enough ago that Verda evidently dropped it.
-func deleteRequestDue(verdaMachine *infrav1.VerdaMachine) bool {
-	c := conditions.Get(verdaMachine, infrav1.InstanceReadyCondition)
-	if c == nil || c.Reason != InstanceDeleteRequestedReason {
-		return true
+// sent yet, or sent long enough ago that Verda evidently dropped it. It
+// records the time of a request it approves.
+func deleteRequestDue(obj client.Object, suffix string) bool {
+	key := deleteRequestedAnnotation
+	if suffix != "" {
+		key += "-" + suffix
 	}
-	return time.Since(c.LastTransitionTime.Time) > deleteRetryInterval
+	annotations := obj.GetAnnotations()
+	if last, err := time.Parse(time.RFC3339, annotations[key]); err == nil && time.Since(last) < deleteRetryInterval {
+		return false
+	}
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[key] = time.Now().UTC().Format(time.RFC3339)
+	obj.SetAnnotations(annotations)
+	return true
 }
 
 // VerdaMachineReconciler reconciles a VerdaMachine object.
@@ -598,7 +612,7 @@ func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav
 		// Verda discontinues asynchronously and keeps reporting "running" for
 		// minutes; re-sending the request every poll only restarts the queue.
 		// Issue it once and repeat only if nothing has happened for a while.
-		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaMachine) {
+		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaMachine, "") {
 			log.Info("Deleting Verda instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
