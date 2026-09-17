@@ -171,6 +171,15 @@ func (f *Fake) DeleteInstance(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *Fake) PurgeInstanceVolumes(_ context.Context, id string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if inst, ok := f.Instances[id]; ok {
+		delete(f.Volumes, inst.OSVolumeID)
+	}
+	return 0, nil
+}
+
 func (f *Fake) DeleteStartupScript(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

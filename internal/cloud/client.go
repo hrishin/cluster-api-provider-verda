@@ -165,10 +165,19 @@ type Client interface {
 	// DeleteStartupScriptByName deletes any startup scripts with the given
 	// name. Used to clean up scripts whose ID was never recorded.
 	DeleteStartupScriptByName(ctx context.Context, name string) error
-	// DeleteInstance deletes the instance and its OS volume. Deleting a missing
-	// instance is not an error. Instances without the TagManagedBy tag are never
-	// deleted (ErrNotManaged).
+	// DeleteInstance takes the next step towards deleting the instance and its
+	// volumes: a running instance is shut down (Verda's delete of a running
+	// instance can stall indefinitely), an offline one is deleted, and the
+	// volumes of a discontinued one are purged from the trash. Callers poll
+	// and call again until PurgeInstanceVolumes reports nothing left. Deleting
+	// a missing instance is not an error. Instances without the TagManagedBy
+	// tag are never touched (ErrNotManaged).
 	DeleteInstance(ctx context.Context, id string) error
+	// PurgeInstanceVolumes permanently deletes the volumes that belonged to a
+	// discontinued instance from the trash and reports how many are still
+	// pending (a volume is in the trash only after Verda finishes the
+	// discontinue). Missing volumes count as purged.
+	PurgeInstanceVolumes(ctx context.Context, id string) (pending int, err error)
 	// DeleteStartupScript deletes a startup script. Deleting a missing script is not an error.
 	DeleteStartupScript(ctx context.Context, id string) error
 	// GetVolume returns the volume with the given ID, or ErrNotFound.
@@ -387,20 +396,101 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 	if toInstance(inst).Tags[TagManagedBy] != ManagedByValue {
 		return fmt.Errorf("instance %s (%s): %w", id, inst.Hostname, ErrNotManaged)
 	}
+	switch inst.Status {
+	case StatusDiscontinued, StatusDeleted:
+		_, err := c.PurgeInstanceVolumes(ctx, id)
+		return err
+	case StatusDeleting:
+		return nil
+	case StatusOffline:
+		// Fall through to the delete below.
+	default:
+		// Running, provisioning, ...: stop it first. Delete on a running
+		// instance is accepted by the API but may never complete.
+		if err := c.api.Instances.Shutdown(ctx, id); err != nil {
+			if isNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("shutting down instance %s: %w", id, err)
+		}
+		return nil
+	}
 	// Delete every volume that came with the instance: the OS volume (or its
 	// clone) and the data volumes. All were created by this provider.
-	var volumes []string
-	if inst.OSVolumeID != nil {
-		volumes = append(volumes, *inst.OSVolumeID)
-	}
-	volumes = append(volumes, inst.VolumeIDs...)
-	if err := c.api.Instances.Delete(ctx, []string{id}, volumes, true); err != nil {
+	//
+	// The list must not contain duplicates and delete_permanently must not be
+	// set: Verda accepts such requests with "success" but never executes them
+	// (observed live: instances stayed running/offline for 30+ minutes). Verda
+	// itself lists the OS volume in volume_ids as well.
+	if err := c.api.Instances.Delete(ctx, []string{id}, instanceVolumeIDs(inst), false); err != nil {
 		if isNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("deleting instance %s: %w", id, err)
 	}
 	return nil
+}
+
+// instanceVolumeIDs returns the OS and data volume IDs of an instance without duplicates.
+func instanceVolumeIDs(inst *verda.Instance) []string {
+	seen := map[string]bool{}
+	var ids []string
+	add := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if inst.OSVolumeID != nil {
+		add(*inst.OSVolumeID)
+	}
+	for _, id := range inst.VolumeIDs {
+		add(id)
+	}
+	return ids
+}
+
+func (c *sdkClient) PurgeInstanceVolumes(ctx context.Context, id string) (int, error) {
+	inst, err := c.api.Instances.GetByID(ctx, id)
+	if err != nil {
+		if isNotFound(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("getting instance %s: %w", id, err)
+	}
+	if toInstance(inst).Tags[TagManagedBy] != ManagedByValue {
+		return 0, fmt.Errorf("instance %s (%s): %w", id, inst.Hostname, ErrNotManaged)
+	}
+	ids := instanceVolumeIDs(inst)
+
+	trash, err := c.api.Volumes.GetVolumesInTrash(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("listing trashed volumes: %w", err)
+	}
+	inTrash := map[string]bool{}
+	for _, v := range trash {
+		inTrash[v.ID] = true
+	}
+
+	pending := 0
+	for _, volID := range ids {
+		if inTrash[volID] {
+			if err := c.api.Volumes.DeleteVolume(ctx, volID, true); err != nil && !isNotFound(err) {
+				return 0, fmt.Errorf("purging volume %s: %w", volID, err)
+			}
+			continue
+		}
+		// Not in the trash: either already purged (gone, or still queryable
+		// as "deleted") or still attached / being discontinued (pending).
+		vol, err := c.api.Volumes.GetVolume(ctx, volID)
+		switch {
+		case err == nil && vol.Status != VolumeStatusDeleted:
+			pending++
+		case err != nil && !isNotFound(err):
+			return 0, fmt.Errorf("getting volume %s: %w", volID, err)
+		}
+	}
+	return pending, nil
 }
 
 func (c *sdkClient) DeleteStartupScriptByName(ctx context.Context, name string) error {

@@ -456,7 +456,7 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 		return ctrl.Result{}, err
 	}
 	if instance != nil && !instanceGone(instance) {
-		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaCluster, "lb") {
+		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaCluster, "lb", instance.Status) {
 			log.Info("Deleting load balancer instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
@@ -464,6 +464,15 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 			setLBNotReady(verdaCluster, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for load balancer instance %s", instance.ID))
 		}
 		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
+	}
+	if instance != nil && instance.Status != cloud.StatusNotFound {
+		pending, err := r.cloud.PurgeInstanceVolumes(ctx, instance.ID)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending > 0 {
+			return ctrl.Result{RequeueAfter: deletePollInterval}, nil
+		}
 	}
 	if id := verdaCluster.Status.LoadBalancer.StartupScriptID; id != "" {
 		if err := r.cloud.DeleteStartupScript(ctx, id); err != nil {

@@ -171,7 +171,7 @@ func (r *clusterScope) deleteServiceLoadBalancer(ctx context.Context, verdaClust
 		return false, err
 	}
 	if instance != nil && !instanceGone(instance) {
-		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaCluster, "servicelb") {
+		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaCluster, "servicelb", instance.Status) {
 			ctrl.LoggerFrom(ctx).Info("Deleting service load balancer instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return false, err
@@ -179,6 +179,15 @@ func (r *clusterScope) deleteServiceLoadBalancer(ctx context.Context, verdaClust
 			setServiceLBNotReady(verdaCluster, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for service load balancer instance %s", instance.ID))
 		}
 		return true, nil
+	}
+	if instance != nil && instance.Status != cloud.StatusNotFound {
+		pending, err := r.cloud.PurgeInstanceVolumes(ctx, instance.ID)
+		if err != nil {
+			return false, err
+		}
+		if pending > 0 {
+			return true, nil
+		}
 	}
 	if status.StartupScriptID != "" {
 		if err := r.cloud.DeleteStartupScript(ctx, status.StartupScriptID); err != nil {

@@ -79,29 +79,34 @@ const (
 )
 
 // deleteRetryInterval is how long to wait for Verda to act on a delete
-// request before sending it again.
-const deleteRetryInterval = 5 * time.Minute
+// request before sending it again. Kept short: with a well-formed request
+// Verda acts within seconds, and a repeat is harmless.
+const deleteRetryInterval = 20 * time.Second
 
 // deleteRequestedAnnotation records when a delete was last sent to Verda for
 // the instance named by the suffix (machine, lb, servicelb).
 const deleteRequestedAnnotation = "verda.cluster.x-k8s.io/delete-requested-at"
 
-// deleteRequestDue reports whether a delete request should be (re)sent: never
-// sent yet, or sent long enough ago that Verda evidently dropped it. It
-// records the time of a request it approves.
-func deleteRequestDue(obj client.Object, suffix string) bool {
+// deleteRequestDue reports whether the next delete step should be sent to
+// Verda for an instance in the given state: yes when nothing was sent for
+// that state yet, or when the last request for it is older than
+// deleteRetryInterval (Verda evidently dropped it). It records approved
+// requests as "<state>@<time>".
+func deleteRequestDue(obj client.Object, suffix, state string) bool {
 	key := deleteRequestedAnnotation
 	if suffix != "" {
 		key += "-" + suffix
 	}
 	annotations := obj.GetAnnotations()
-	if last, err := time.Parse(time.RFC3339, annotations[key]); err == nil && time.Since(last) < deleteRetryInterval {
-		return false
+	if lastState, lastAt, ok := strings.Cut(annotations[key], "@"); ok && lastState == state {
+		if last, err := time.Parse(time.RFC3339, lastAt); err == nil && time.Since(last) < deleteRetryInterval {
+			return false
+		}
 	}
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[key] = time.Now().UTC().Format(time.RFC3339)
+	annotations[key] = state + "@" + time.Now().UTC().Format(time.RFC3339)
 	obj.SetAnnotations(annotations)
 	return true
 }
@@ -609,18 +614,30 @@ func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav
 		return ctrl.Result{}, err
 	}
 	if instance != nil && !instanceGone(instance) {
-		// Verda discontinues asynchronously and keeps reporting "running" for
-		// minutes; re-sending the request every poll only restarts the queue.
-		// Issue it once and repeat only if nothing has happened for a while.
-		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaMachine, "") {
-			log.Info("Deleting Verda instance", "instanceID", instance.ID)
+		// Deletion is two-phase (shutdown, then delete once offline) and Verda
+		// acts asynchronously; send each step once and repeat only if nothing
+		// has happened for a while.
+		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaMachine, "", instance.Status) {
+			log.Info("Deleting Verda instance", "instanceID", instance.ID, "state", instance.Status)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
 			}
-			setInstanceReadyFalse(verdaMachine, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for Verda instance %s", instance.ID))
+			setInstanceReadyFalse(verdaMachine, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for Verda instance %s (was %s)", instance.ID, instance.Status))
 		}
 		verdaMachine.Status.InstanceState = instance.Status
 		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
+	}
+	if instance != nil && instance.Status != cloud.StatusNotFound {
+		// Verda moves the instance's volumes to a 96h trash; purge them so
+		// they stop billing.
+		pending, err := r.cloud.PurgeInstanceVolumes(ctx, instance.ID)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending > 0 {
+			log.V(4).Info("Waiting for Verda to release the instance's volumes", "instanceID", instance.ID, "pending", pending)
+			return ctrl.Result{RequeueAfter: deletePollInterval}, nil
+		}
 	}
 
 	if scriptID := verdaMachine.Status.StartupScriptID; scriptID != "" {
