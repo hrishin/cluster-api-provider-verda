@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -507,12 +508,19 @@ func (r *machineScope) deleteOSVolume(ctx context.Context, verdaMachine *infrav1
 // osVolumeName is the name of the per-machine OS volume clone. It includes the
 // namespace because volume names are global to the Verda account and the same
 // machine name can exist in several namespaces.
-// resolveOSVolume accepts a volume ID or an exact volume name and returns the ID.
+// uuidRe matches Verda resource IDs.
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// resolveOSVolume accepts a volume ID or an exact volume name and returns the
+// ID. Only UUIDs are looked up directly: Verda answers 400, not 404, when
+// the ID is not well-formed.
 func (r *machineScope) resolveOSVolume(ctx context.Context, idOrName string) (string, error) {
-	if _, err := r.cloud.GetVolume(ctx, idOrName); err == nil {
-		return idOrName, nil
-	} else if !errors.Is(err, cloud.ErrNotFound) {
-		return "", err
+	if uuidRe.MatchString(strings.ToLower(idOrName)) {
+		if _, err := r.cloud.GetVolume(ctx, idOrName); err == nil {
+			return idOrName, nil
+		} else if !errors.Is(err, cloud.ErrNotFound) {
+			return "", err
+		}
 	}
 	volume, err := r.cloud.FindVolumeByName(ctx, idOrName)
 	if err != nil {
