@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package ccm implements a minimal Kubernetes cloud provider for Verda: the
-// node controller (addresses, provider ID, zone) and node lifecycle
-// (removing Nodes whose instance is gone). Verda has no load balancers or
-// routes, so those interfaces are not implemented.
+// Package ccm implements the Kubernetes cloud provider for Verda: the node
+// controller (addresses, provider ID, zone), node lifecycle (removing Nodes
+// whose instance is gone) and Services of type LoadBalancer on the
+// provider-managed envoy instance. Verda has no VPC routes.
 package ccm
 
 import (
@@ -28,10 +28,12 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
 
 	"github.com/hrishin/verda-capi/internal/cloud"
+	"github.com/hrishin/verda-capi/internal/loadbalancer"
 )
 
 // ProviderName is the value of --cloud-provider and the provider ID scheme.
@@ -57,6 +59,8 @@ func init() {
 // Provider implements cloudprovider.Interface for Verda.
 type Provider struct {
 	client cloud.Client
+	kube   kubernetes.Interface
+	lb     *serviceLB
 }
 
 var (
@@ -69,11 +73,18 @@ func New(client cloud.Client) *Provider {
 	return &Provider{client: client}
 }
 
-// Initialize implements cloudprovider.Interface.
-func (p *Provider) Initialize(cloudprovider.ControllerClientBuilder, <-chan struct{}) {}
+// Initialize implements cloudprovider.Interface. The kube client enables the
+// Service load balancer implementation.
+func (p *Provider) Initialize(builder cloudprovider.ControllerClientBuilder, _ <-chan struct{}) {
+	p.WithKubeClient(builder.ClientOrDie("verda-service-load-balancer"), &loadbalancer.SSHUpdater{})
+}
 
-// LoadBalancer implements cloudprovider.Interface; Verda has none.
-func (p *Provider) LoadBalancer() (cloudprovider.LoadBalancer, bool) { return nil, false }
+// WithKubeClient wires the Service load balancer with the given clients.
+func (p *Provider) WithKubeClient(kube kubernetes.Interface, updater loadbalancer.Updater) *Provider {
+	p.kube = kube
+	p.lb = &serviceLB{kube: kube, updater: updater}
+	return p
+}
 
 // Instances implements cloudprovider.Interface; superseded by InstancesV2.
 func (p *Provider) Instances() (cloudprovider.Instances, bool) { return nil, false }

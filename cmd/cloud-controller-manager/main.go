@@ -46,8 +46,8 @@ func main() {
 	ccmOptions.KubeCloudShared.CloudProvider.Name = ccm.ProviderName
 
 	controllerInitializers := app.DefaultInitFuncConstructors
-	// Only the node controllers apply: Verda has no load balancers or routes.
-	delete(controllerInitializers, names.ServiceLBController)
+	// Node, node lifecycle and service (type=LoadBalancer via the
+	// provider-managed envoy instance) controllers apply; there are no routes.
 	delete(controllerInitializers, names.NodeRouteController)
 	for name, constructor := range controllerInitializers {
 		constructor.InitContext.ClientName = "verda-external-" + name
