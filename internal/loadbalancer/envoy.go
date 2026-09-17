@@ -115,6 +115,11 @@ func writeListener(b *strings.Builder, f Frontend) {
 	fmt.Fprintf(b, "        stat_prefix: %s\n        cluster: %s\n", f.Name, f.Name)
 }
 
+// healthCheckHeader is the common part of a cluster's active health check.
+// no_traffic_interval is lowered from envoy's 60s default so a Service whose
+// NodePort was not yet programmed when the first probe ran recovers quickly.
+const healthCheckHeader = "  health_checks:\n  - timeout: 2s\n    interval: 5s\n    no_traffic_interval: 5s\n    unhealthy_threshold: 3\n    healthy_threshold: 2\n"
+
 func writeCluster(b *strings.Builder, f Frontend) {
 	fmt.Fprintf(b, "- \"@type\": type.googleapis.com/envoy.config.cluster.v3.Cluster\n  name: %s\n", f.Name)
 	b.WriteString("  type: STATIC\n  connect_timeout: 5s\n  lb_policy: ROUND_ROBIN\n")
@@ -131,10 +136,11 @@ func writeCluster(b *strings.Builder, f Frontend) {
 	udp := strings.EqualFold(f.Protocol, "UDP")
 	switch {
 	case f.HealthCheckPort > 0:
-		b.WriteString("  health_checks:\n  - timeout: 2s\n    interval: 5s\n    unhealthy_threshold: 3\n    healthy_threshold: 2\n")
+		b.WriteString(healthCheckHeader)
 		fmt.Fprintf(b, "    alt_port: %d\n    http_health_check: {path: /healthz}\n", f.HealthCheckPort)
 	case !udp:
-		b.WriteString("  health_checks:\n  - timeout: 2s\n    interval: 5s\n    unhealthy_threshold: 3\n    healthy_threshold: 2\n    tcp_health_check: {}\n")
+		b.WriteString(healthCheckHeader)
+		b.WriteString("    tcp_health_check: {}\n")
 	}
 	if f.ProxyProtocol && !udp {
 		b.WriteString("  transport_socket:\n    name: envoy.transport_sockets.upstream_proxy_protocol\n    typed_config:\n")

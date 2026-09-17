@@ -14,13 +14,23 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
 | `VerdaMachine` | One Verda instance. Turns the kubeadm bootstrap data into a Verda startup script, creates the instance, and reports its state, address and provider ID. |
 | `VerdaMachineTemplate` | Template for `MachineDeployment` / `KubeadmControlPlane`. |
 | `VerdaClusterTemplate` | Template for ClusterClass. |
-| `verda-cloud-controller-manager` | Runs inside workload clusters (kubelets use `--cloud-provider=external`): sets node addresses, provider ID and zone, and removes Nodes whose instance is gone. Installed by the cluster templates through a ClusterResourceSet. |
+| `verda-cloud-controller-manager` | Runs inside workload clusters (kubelets use `--cloud-provider=external`): sets node addresses, provider ID and zone, removes Nodes whose instance is gone, and implements `Service type=LoadBalancer` on the service load balancer. Installed by the cluster templates through a ClusterResourceSet. |
 
 ### Design notes specific to Verda
 
 - **Control plane endpoint is user-provided.** Verda offers no load balancer or
   floating IPs, so `VerdaCluster.spec.controlPlaneEndpoint` must be a DNS name
   or IP you control that routes to the control plane machine(s).
+- **Services of type LoadBalancer.** With `VerdaCluster.spec.serviceLoadBalancer.enabled`
+  the provider runs an envoy instance per cluster and hands its address and
+  SSH keys to the workload cluster (`kube-system/verda-service-lb`); the cloud
+  controller manager renders one envoy listener per Service port (TCP and UDP,
+  layer 4 pass-through — TLS terminates in the cluster) forwarding to the
+  NodePorts of Ready workers, with active health checks and
+  `externalTrafficPolicy: Local` support. All Services share the instance's IP,
+  so two Services cannot use the same port. Annotate a Service with
+  `verda.cluster.x-k8s.io/proxy-protocol: "true"` to get PROXY protocol v2
+  upstream (e.g. for ingress-nginx `use-proxy-protocol`).
 - **Boot from an image-builder OS volume.** `VerdaMachine.spec.osVolumeID`
   points at a detached OS volume by ID or exact name (e.g. built with
   image-builder, containing kubeadm/kubelet/containerd). The provider clones it per machine
@@ -149,8 +159,8 @@ block and to the worker `KubeadmConfigTemplate.preKubeadmCommands`.
 
 - `VerdaMachinePool`: Verda has no autoscaling-group equivalent, so machine
   pools are not planned; use MachineDeployments with cluster-autoscaler.
-- The cloud controller manager implements node addresses, provider ID, zone
-  and node lifecycle only; there are no Services of type LoadBalancer.
+- The service load balancer is a single instance per cluster (no HA), TCP/UDP
+  only (no SCTP), and does not terminate TLS.
 - Only one API version (`v1beta1`); see docs/api-versioning.md.
 
 Verified live (2026-09): a single control plane + one worker in FIN-03 booted
