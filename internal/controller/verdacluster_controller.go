@@ -456,12 +456,12 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 		return ctrl.Result{}, err
 	}
 	if instance != nil && !instanceGone(instance) {
-		setLBNotReady(verdaCluster, clusterv1.DeletingReason, "Deleting load balancer instance")
-		if instance.Status != cloud.StatusDeleting {
+		if instance.Status != cloud.StatusDeleting && deleteDue(verdaCluster, infrav1.LoadBalancerReadyCondition) {
 			log.Info("Deleting load balancer instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
 			}
+			setLBNotReady(verdaCluster, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for load balancer instance %s", instance.ID))
 		}
 		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
 	}
@@ -479,6 +479,16 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 
 	controllerutil.RemoveFinalizer(verdaCluster, infrav1.ClusterFinalizer)
 	return ctrl.Result{}, nil
+}
+
+// deleteDue reports whether a delete request for the instance tracked by the
+// given condition should be (re)sent; see deleteRequestDue.
+func deleteDue(verdaCluster *infrav1.VerdaCluster, conditionType string) bool {
+	c := conditions.Get(verdaCluster, conditionType)
+	if c == nil || c.Reason != InstanceDeleteRequestedReason {
+		return true
+	}
+	return time.Since(c.LastTransitionTime.Time) > deleteRetryInterval
 }
 
 func setEndpointReady(verdaCluster *infrav1.VerdaCluster) {

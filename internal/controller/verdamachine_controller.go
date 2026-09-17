@@ -73,7 +73,24 @@ const (
 	// NoCapacityReason means Verda had no capacity for the instance type; the
 	// create is retried.
 	NoCapacityReason = "NoCapacity"
+	// InstanceDeleteRequestedReason means the delete was sent to Verda and the
+	// instance is being discontinued.
+	InstanceDeleteRequestedReason = "InstanceDeleteRequested"
 )
+
+// deleteRetryInterval is how long to wait for Verda to act on a delete
+// request before sending it again.
+const deleteRetryInterval = 5 * time.Minute
+
+// deleteRequestDue reports whether a delete request should be (re)sent: never
+// sent yet, or sent long enough ago that Verda evidently dropped it.
+func deleteRequestDue(verdaMachine *infrav1.VerdaMachine) bool {
+	c := conditions.Get(verdaMachine, infrav1.InstanceReadyCondition)
+	if c == nil || c.Reason != InstanceDeleteRequestedReason {
+		return true
+	}
+	return time.Since(c.LastTransitionTime.Time) > deleteRetryInterval
+}
 
 // VerdaMachineReconciler reconciles a VerdaMachine object.
 type VerdaMachineReconciler struct {
@@ -578,15 +595,17 @@ func (r *machineScope) reconcileDelete(ctx context.Context, verdaMachine *infrav
 		return ctrl.Result{}, err
 	}
 	if instance != nil && !instanceGone(instance) {
-		verdaMachine.Status.InstanceState = instance.Status
-		if instance.Status != cloud.StatusDeleting {
+		// Verda discontinues asynchronously and keeps reporting "running" for
+		// minutes; re-sending the request every poll only restarts the queue.
+		// Issue it once and repeat only if nothing has happened for a while.
+		if instance.Status != cloud.StatusDeleting && deleteRequestDue(verdaMachine) {
 			log.Info("Deleting Verda instance", "instanceID", instance.ID)
 			if err := r.cloud.DeleteInstance(ctx, instance.ID); err != nil {
 				return ctrl.Result{}, err
 			}
+			setInstanceReadyFalse(verdaMachine, InstanceDeleteRequestedReason, fmt.Sprintf("Delete requested for Verda instance %s", instance.ID))
 		}
-		// Verda deletes asynchronously; wait until the instance is gone so the
-		// startup script and OS volume are no longer referenced.
+		verdaMachine.Status.InstanceState = instance.Status
 		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
 	}
 
