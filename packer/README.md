@@ -56,7 +56,10 @@ on demand (location, instance type, source image, extra locations, spot). Pull r
 only validate. It needs three repository secrets: `VERDA_CLIENT_ID` and
 `VERDA_CLIENT_SECRET` (the project the images are published in) and
 `NODE_SSH_PRIVATE_KEY` (the node key pair's private half). The volume ID ends up in
-`packer-manifest.json` (`artifact_id`).
+`packer-manifest.json` (`artifact_id`), and after a successful build the workflow
+opens a pull request (`hack/bump-images.sh`) pointing the cluster templates and
+examples at the new images. Being opened with the workflow token, that pull
+request does not trigger the other workflows; merge it after a look.
 
 ## Cost
 

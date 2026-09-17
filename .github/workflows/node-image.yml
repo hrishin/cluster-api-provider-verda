@@ -158,6 +158,8 @@ jobs:
       group: node-image-build
       cancel-in-progress: false
     timeout-minutes: 120
+    outputs:
+      image_name: ${{ steps.manifest.outputs.image_name }}
     env:
       VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
       VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
@@ -197,9 +199,11 @@ jobs:
             -var "is_spot=$IS_SPOT"
 
       - name: Summary
+        id: manifest
         if: always()
         run: |
           if [ -f packer/packer-manifest.json ]; then
+            echo "image_name=$(jq -r '.builds[-1].custom_data.image_name' packer/packer-manifest.json)" >> "$GITHUB_OUTPUT"
             jq -r '.builds[-1] |
               "## GPU node image published\n\n| | |\n|---|---|\n" +
               "| Image | `\(.custom_data.image_name)` |\n" +
@@ -218,3 +222,56 @@ jobs:
           name: packer-manifest-gpu
           path: packer/packer-manifest.json
           if-no-files-found: ignore
+
+  bump-templates:
+    # Point the templates and examples at the images this run published and
+    # open a pull request for it.
+    needs: [build, build-gpu]
+    if: always() && (needs.build.result == 'success' || needs.build-gpu.result == 'success') && needs.build-gpu.result != 'failure' && needs.build.result != 'failure'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NODE_IMAGE: ${{ needs.build.outputs.image_name }}
+      GPU_IMAGE: ${{ needs.build-gpu.outputs.image_name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bump the image defaults
+        id: bump
+        run: |
+          args=()
+          [ -z "$NODE_IMAGE" ] || args+=(--node "$NODE_IMAGE")
+          [ -z "$GPU_IMAGE" ] || args+=(--gpu "$GPU_IMAGE")
+          [ "${#args[@]}" -gt 0 ] || { echo "no images published in this run"; exit 0; }
+          hack/bump-images.sh "${args[@]}"
+          if git diff --quiet; then
+            echo "templates already point at these images"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a pull request
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          build_id="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          branch="bump/node-images-${build_id}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          {
+            echo "feat(templates): use the node images built on ${GITHUB_SHA::7}"
+            echo
+            echo "Built by the node-image workflow (run ${GITHUB_RUN_ID}):"
+            [ -z "$NODE_IMAGE" ] || echo "- node image: $NODE_IMAGE"
+            [ -z "$GPU_IMAGE" ] || echo "- GPU node image: $GPU_IMAGE"
+          } > /tmp/msg
+          git commit -q -F /tmp/msg
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "feat(templates): use the node images built on ${GITHUB_SHA::7}" \
+            --body-file /tmp/msg
