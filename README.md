@@ -10,7 +10,7 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
 
 | Resource | Purpose |
 |---|---|
-| `VerdaCluster` | Cluster-level infrastructure. Verda has no managed network or load balancer, so this is limited to validating and surfacing the control plane endpoint. |
+| `VerdaCluster` | Cluster-level infrastructure. Verda has no managed network or load balancer, so the controller either surfaces a user-provided control plane endpoint or provisions an haproxy instance in front of the control plane (`spec.controlPlaneLoadBalancer`, kept in sync with the control-plane machines), optionally an envoy instance for `Service type=LoadBalancer` (`spec.serviceLoadBalancer`), and publishes the location as the failure domain. Both instances are deleted with the cluster. |
 | `VerdaMachine` | One Verda instance. Turns the kubeadm bootstrap data into a Verda startup script, creates the instance, and reports its state, address and provider ID. |
 | `VerdaMachineTemplate` | Template for `MachineDeployment` / `KubeadmControlPlane`. |
 | `VerdaClusterTemplate` | Template for ClusterClass. |
