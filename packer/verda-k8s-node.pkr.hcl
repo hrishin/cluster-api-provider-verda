@@ -1,9 +1,10 @@
 # Kubernetes 1.35 node image for Verda, built in two stages and captured as
 # detached OS volumes (Verda's custom images):
 #   1. node:     a stock Ubuntu instance provisioned with ansible/verda-node.yml
-#   2. gpu-node: a clone of the node image provisioned with
-#                ansible/verda-gpu-node.yml (-var gpu=true; build.sh build-gpu
-#                makes the clone and cleans it up)
+#   2. gpu-node: a clone of the node image provisioned on a GPU instance with
+#                ansible/verda-gpu-node.yml, which also verifies the driver and
+#                the container runtime on the hardware (-var gpu=true;
+#                build.sh build-gpu makes the clone and cleans it up)
 # Run via build.sh or the node-image workflow.
 
 packer {
@@ -95,7 +96,7 @@ locals {
 }
 
 source "verda-instance" "k8s_node" {
-  instance_type = var.instance_type
+  instance_type = var.gpu ? var.gpu_instance_type : var.instance_type
   location_code = var.location
   image         = var.source_image
   hostname      = "packer-k8s-${local.flavor}-${local.build_id}"
@@ -168,6 +169,7 @@ build {
       source_image       = var.source_image
       source_node_image  = var.source_node_image
       flavor             = local.flavor
+      instance_type      = var.gpu ? var.gpu_instance_type : var.instance_type
       location           = var.location
     }
   }

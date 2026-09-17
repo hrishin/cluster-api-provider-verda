@@ -25,8 +25,11 @@ on:
         description: Verda datacenter
         default: FIN-03
       instance_type:
-        description: Build instance type
+        description: Build instance type for the node stage
         default: CPU.4V.16G
+      gpu_instance_type:
+        description: GPU instance type the gpu stage builds and verifies on
+        default: 1RTXPRO6000.30V
       source_image:
         description: Verda image_type to start from
         default: ubuntu-24.04
@@ -184,12 +187,12 @@ jobs:
           IS_SPOT: ${{ inputs.is_spot || 'false' }}
           # The node image from this run when there is one, else the input, else the newest.
           NODE_IMAGE: ${{ needs.build.outputs.image_name || inputs.node_image || '' }}
+          GPU_INSTANCE_TYPE: ${{ inputs.gpu_instance_type || '1RTXPRO6000.30V' }}
         run: |
           BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
           export BUILD_ID
           locations="$(jq -cn --arg l "$ARTIFACT_LOCATIONS" '$l | split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')"
           packer/build.sh build-gpu -color=false \
-            -var "instance_type=$INSTANCE_TYPE" \
             -var "artifact_locations=$locations" \
             -var "is_spot=$IS_SPOT"
 
@@ -202,6 +205,7 @@ jobs:
               "| Image | `\(.custom_data.image_name)` |\n" +
               "| Kubernetes | \(.custom_data.kubernetes_version) |\n" +
               "| Built from | \(.custom_data.source_node_image) |\n" +
+              "| Built and verified on | \(.custom_data.instance_type) |\n" +
               "| Volume ID (\(.custom_data.location)) | `\(.artifact_id)` |\n"
             ' packer/packer-manifest.json >> "$GITHUB_STEP_SUMMARY"
           else

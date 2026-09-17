@@ -9,10 +9,10 @@ Two images, built in two stages, each a Verda OS volume:
    modules and driver, the CUDA toolkit and the NVIDIA container toolkit
    (`ansible/verda-gpu-node.yml`), with `nvidia` as containerd's default runtime.
    Nodes booted from it need only the NVIDIA device plugin (or the GPU operator
-   with `driver.enabled=false` and `toolkit.enabled=false`). The kernel modules
-   are built by DKMS against the image's kernel, so the build runs on a CPU
-   instance; the GPU image is always derived from a node image, never from a
-   different base.
+   with `driver.enabled=false` and `toolkit.enabled=false`). The stage builds on
+   a GPU instance (`1RTXPRO6000.30V` by default) and verifies the driver and the
+   container runtime against the card before capturing; the GPU image is always
+   derived from a node image, never from a different base.
 
 Verda has no image import; a **detached OS volume** is its custom image
 (`POST /v1/instances` takes a volume ID as `image`). The
@@ -40,7 +40,7 @@ Needs `packer` ≥ 1.11, `python3` ≥ 3.11, `git`, `jq`, `curl`.
 # Node SSH key pair (baked into the images): ~/.ssh/verda-k8s-nodes or $NODE_SSH_KEY_FILE.
 packer/build.sh validate
 packer/build.sh build               # stage 1, ≈10 min on a CPU.4V.16G
-packer/build.sh build-gpu           # stage 2 from the newest k8s-node-* (or NODE_IMAGE=<id|name>), ≈15 min
+packer/build.sh build-gpu           # stage 2 from the newest k8s-node-* (or NODE_IMAGE=<id|name>), ≈10 min on a 1RTXPRO6000.30V
 packer/scripts/list-images.sh
 ```
 
@@ -60,8 +60,9 @@ only validate. It needs three repository secrets: `VERDA_CLIENT_ID` and
 
 ## Cost
 
-A build runs one `CPU.4V.16G` for ~10 minutes and leaves a 100 GB volume billed until
-deleted. Old images are not pruned: `verda volume delete <id>`.
+The node stage runs one `CPU.4V.16G` for ~10 minutes, the GPU stage one
+`1RTXPRO6000.30V` for ~10 minutes; each leaves a 50 GB volume billed until deleted.
+Old images are not pruned: `verda volume delete <id>`.
 
 ## Use
 

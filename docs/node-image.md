@@ -44,7 +44,7 @@ pinned in `packer/versions.pkrvars.json`.
 # the node SSH key pair from ~/.ssh/verda-k8s-nodes (or NODE_SSH_KEY_FILE).
 packer/build.sh validate
 packer/build.sh build                          # stage 1, about 10 minutes on a CPU.4V.16G
-packer/build.sh build-gpu                      # stage 2 from the newest node image, about 15 minutes
+packer/build.sh build-gpu                      # stage 2 on a 1RTXPRO6000.30V, verified against the card, about 10 minutes
 packer/scripts/list-images.sh                  # shows the volumes to use as VERDA_OS_VOLUME_ID
 ```
 

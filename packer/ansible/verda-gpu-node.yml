@@ -6,8 +6,10 @@
 #     NVIDIA's CUDA apt repository; open modules are what Blackwell needs)
 #   - the CUDA toolkit (cuda-toolkit-<version>)
 #   - the NVIDIA container toolkit, with nvidia as containerd's default runtime
-# The kernel modules are built by DKMS against the image's kernel, so the
-# build instance does not need a GPU.
+# The build runs on a GPU instance: after installing, the kernel modules are
+# loaded, nvidia-smi must see the GPU, and a CUDA container run through
+# containerd's nvidia runtime must see it too, so a broken driver or runtime
+# fails the build instead of the first node.
 ---
 - name: Add the NVIDIA GPU stack
   hosts: all
@@ -15,6 +17,8 @@
   vars:
     cuda_repo: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64
     nct_repo: https://nvidia.github.io/libnvidia-container
+    # CUDA base image used only to verify the container runtime on the build instance.
+    cuda_image_tag: "{{ cuda_version | replace('-', '.') }}.1-base-ubuntu24.04"
   environment:
     DEBIAN_FRONTEND: noninteractive
   tasks:
@@ -96,6 +100,47 @@
       ansible.builtin.command:
         cmd: containerd config dump
       changed_when: false
+
+    - name: Load the NVIDIA kernel modules
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - nvidia
+        - nvidia_uvm
+
+    - name: Check the driver sees the GPU
+      ansible.builtin.command:
+        cmd: nvidia-smi -L
+      register: nvidia_smi_list
+      changed_when: false
+      failed_when: nvidia_smi_list.rc != 0 or ('GPU 0' not in nvidia_smi_list.stdout)
+
+    - name: Show the GPU
+      ansible.builtin.debug:
+        msg: "{{ nvidia_smi_list.stdout_lines }}"
+
+    - name: Pull a CUDA base image for the runtime check
+      ansible.builtin.command:
+        cmd: ctr -n k8s.io image pull docker.io/nvidia/cuda:{{ cuda_image_tag }}
+      changed_when: true
+
+    - name: Check a container sees the GPU through the nvidia runtime
+      ansible.builtin.command:
+        cmd: >-
+          ctr -n k8s.io run --rm --runtime io.containerd.runc.v2
+          --runc-binary /usr/bin/nvidia-container-runtime
+          --env NVIDIA_VISIBLE_DEVICES=all --env NVIDIA_DRIVER_CAPABILITIES=all
+          docker.io/nvidia/cuda:{{ cuda_image_tag }} capi-gpu-check nvidia-smi -L
+      register: container_smi
+      changed_when: false
+      failed_when: container_smi.rc != 0 or ('GPU 0' not in container_smi.stdout)
+
+    - name: Remove the runtime check image
+      ansible.builtin.command:
+        cmd: ctr -n k8s.io image rm docker.io/nvidia/cuda:{{ cuda_image_tag }}
+      changed_when: true
+      failed_when: false
 
     - name: Record the GPU stack versions in the image
       ansible.builtin.copy:

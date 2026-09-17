@@ -56,6 +56,12 @@ variable "source_image" {
   default     = "ubuntu-24.04"
 }
 
+variable "gpu_instance_type" {
+  description = "Instance type the GPU stage builds on. A GPU type, so the built kernel modules are loaded and the driver and container runtime are verified against real hardware before the image is captured."
+  type        = string
+  default     = "1RTXPRO6000.30V"
+}
+
 variable "gpu" {
   description = "Stage 2: layer the NVIDIA driver, CUDA and the container toolkit on a node image clone given as source_image. The volume is named k8s-gpu-node-*."
   type        = bool

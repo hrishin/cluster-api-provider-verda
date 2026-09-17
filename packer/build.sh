@@ -17,6 +17,7 @@
 #      BUILD_ID           volume-name suffix (default: <date>-<git sha>)
 #      NODE_IMAGE         build-gpu: the node image to start from (ID or name)
 #      LOCATION           build-gpu: where to clone and build (default FIN-03)
+#      GPU_INSTANCE_TYPE  build-gpu: GPU instance type to build and verify on (default 1RTXPRO6000.30V)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -247,6 +248,7 @@ case "$action" in
       -var "ssh_private_key_file=$keydir/id" \
       -var "build_id=$id" \
       -var "gpu=true" \
+      -var "gpu_instance_type=${GPU_INSTANCE_TYPE:-1RTXPRO6000.30V}" \
       -var "location=$location" \
       -var "source_image=$clone" \
       -var "source_node_image=$node_name" \
