@@ -63,6 +63,12 @@ opens a pull request (`hack/bump-images.sh`) pointing the cluster templates and
 examples at the new images. Being opened with the workflow token, that pull
 request does not trigger the other workflows; merge it after a look.
 
+Verda's storage backend occasionally fails instance creation with a 5xx
+("An error has occurred during volume create … 408"). Both stages retry that
+up to `BUILD_CREATE_RETRIES` (default 3) times a minute apart, deleting the
+build volume the failed attempt left behind; failures during provisioning are
+not retried.
+
 ## Cost
 
 The node stage runs one `CPU.4V.16G` for ~10 minutes, the GPU stage one

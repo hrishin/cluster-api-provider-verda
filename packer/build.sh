@@ -190,6 +190,45 @@ delete_volume_if_present() {
   esac
 }
 
+# Volumes named after this build that Verda left behind: a build whose
+# instance creation failed keeps the OS volume it had just made (detached,
+# billed), and Packer never learns its ID. Only volumes carrying the exact
+# build name are touched.
+sweep_build_volumes() { # sweep_build_volumes <volume name>
+  local name="$1"
+  [ -n "$name" ] || return 0
+  api GET /volumes | jq -r --arg n "$name" '.[] | select(.name == $n and .status != "deleted") | .id' | while read -r vid; do
+    log "removing leftover build volume $vid ($name)"
+    api DELETE "/volumes/$vid" '{"is_permanent": true}' >/dev/null 2>&1 || true
+  done
+}
+
+# Run packer, retrying when the build died before it had an instance: Verda's
+# storage backend sometimes fails the OS volume or instance creation with a
+# 5xx ("An error has occurred during volume create ... 408"). Failures once the
+# instance is up (provisioning) are real and are not retried.
+packer_build() { # packer_build <build volume name> <packer args...>
+  local volume_name="$1" attempt=1 out rc
+  shift
+  out="$(mktemp)"
+  while :; do
+    set +e
+    "$PACKER" build -timestamp-ui "$@" . 2>&1 | tee "$out"
+    rc="${PIPESTATUS[0]}"
+    set -e
+    [ "$rc" -eq 0 ] && { rm -f "$out"; return 0; }
+    if [ "$attempt" -ge "${BUILD_CREATE_RETRIES:-3}" ] || ! grep -Eq 'errored .*creating instance: API error 5[0-9]{2}' "$out"; then
+      rm -f "$out"
+      return "$rc"
+    fi
+    TOKEN="$(verda_token)"
+    sweep_build_volumes "$volume_name"
+    attempt=$((attempt + 1))
+    log "instance creation failed on the Verda side; retrying in 60s ($attempt/${BUILD_CREATE_RETRIES:-3})"
+    sleep 60
+  done
+}
+
 case "$action" in
   validate)
     ensure_image_builder
@@ -219,12 +258,12 @@ case "$action" in
     keys="$(ssh_key_ids_json)"
     id="$(build_id)"
     log "packer build (build_id=$id)"
-    "$PACKER" build -timestamp-ui \
+    packer_build "packer-k8s-node-$id-build" \
       -var-file="$VERSIONS" \
       -var "image_builder_dir=$IB_DIR" \
       -var "ssh_key_ids=$keys" \
       -var "build_id=$id" \
-      "$@" .
+      "$@"
     log "artifact: $(jq -r '.builds[-1] | "\(.custom_data.image_name) → \(.artifact_id) (\(.custom_data.location))"' "$here/packer-manifest.json")"
     ;;
   build-gpu)
@@ -270,7 +309,9 @@ case "$action" in
       echo "none of the node image's SSH keys ($node_keys) exist in the project any more" >&2
       exit 1
     }
-    "$PACKER" build -timestamp-ui \
+    # Stage 2 makes no volume of its own (it boots the clone, which a retry
+    # reuses), so there is nothing to sweep between attempts.
+    packer_build "" \
       -var-file="$VERSIONS" \
       -var "image_builder_dir=$IB_DIR" \
       -var "ssh_key_ids=$keys" \
@@ -281,7 +322,7 @@ case "$action" in
       -var "location=$location" \
       -var "source_image=$clone" \
       -var "source_node_image=$node_name" \
-      "$@" .
+      "$@"
     log "artifact: $(jq -r '.builds[-1] | "\(.custom_data.image_name) → \(.artifact_id) (\(.custom_data.location))"' "$here/packer-manifest.json")"
     ;;
   *)
