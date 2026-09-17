@@ -148,6 +148,10 @@ build {
       "ANSIBLE_ROLES_PATH=${var.image_builder_dir}/images/capi/ansible/roles",
       "ANSIBLE_HOST_KEY_CHECKING=False",
       "ANSIBLE_NOCOLOR=True",
+      # Keepalives: the driver and CUDA installs run for minutes without output,
+      # and GitHub-hosted runners sit behind a NAT that drops idle connections
+      # after about four minutes ("Shared connection closed").
+      "ANSIBLE_SSH_ARGS=-C -o ControlMaster=auto -o ControlPersist=60s -o ServerAliveInterval=30 -o ServerAliveCountMax=10",
     ]
     extra_arguments = [
       "--extra-vars", jsonencode(local.ansible_vars),
