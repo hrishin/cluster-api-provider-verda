@@ -1,0 +1,109 @@
+# Stage 2 of the node image: starts from a clone of the Kubernetes node image
+# (stage 1, verda-node.yml) and layers the NVIDIA stack on top so nodes booted
+# from it need only the NVIDIA device plugin (or the GPU operator with
+# driver.enabled=false and toolkit.enabled=false):
+#   - the NVIDIA open kernel modules and driver (nvidia-open-<branch>, from
+#     NVIDIA's CUDA apt repository; open modules are what Blackwell needs)
+#   - the CUDA toolkit (cuda-toolkit-<version>)
+#   - the NVIDIA container toolkit, with nvidia as containerd's default runtime
+# The kernel modules are built by DKMS against the image's kernel, so the
+# build instance does not need a GPU.
+---
+- name: Add the NVIDIA GPU stack
+  hosts: all
+  become: true
+  vars:
+    cuda_repo: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64
+    nct_repo: https://nvidia.github.io/libnvidia-container
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  tasks:
+    - name: Check this is a Kubernetes node image (stage 1 output)
+      ansible.builtin.stat:
+        path: /usr/bin/kubeadm
+      register: kubeadm_bin
+      failed_when: not kubeadm_bin.stat.exists
+
+    - name: Install kernel headers for DKMS
+      ansible.builtin.apt:
+        name:
+          - "linux-headers-{{ ansible_kernel }}"
+          - build-essential
+          - dkms
+        update_cache: true
+        lock_timeout: 300
+
+    - name: Blacklist nouveau
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/blacklist-nouveau.conf
+        mode: "0644"
+        content: |
+          blacklist nouveau
+          options nouveau modeset=0
+
+    - name: Install the NVIDIA CUDA repository keyring
+      ansible.builtin.apt:
+        deb: "{{ cuda_repo }}/cuda-keyring_1.1-1_all.deb"
+        lock_timeout: 300
+
+    - name: Install the NVIDIA open driver and the CUDA toolkit
+      ansible.builtin.apt:
+        name:
+          - "nvidia-open-{{ nvidia_driver_branch }}"
+          - "cuda-toolkit-{{ cuda_version }}"
+        update_cache: true
+        lock_timeout: 300
+
+    - name: Rebuild the initramfs without nouveau
+      ansible.builtin.command:
+        cmd: update-initramfs -u
+      changed_when: true
+
+    - name: Check the driver package installed its tools
+      ansible.builtin.stat:
+        path: /usr/bin/nvidia-smi
+      register: nvidia_smi
+      failed_when: not nvidia_smi.stat.exists
+
+    - name: Add the NVIDIA container toolkit apt key
+      ansible.builtin.get_url:
+        url: "{{ nct_repo }}/gpgkey"
+        dest: /etc/apt/keyrings/nvidia-container-toolkit.asc
+        mode: "0644"
+
+    - name: Add the NVIDIA container toolkit apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.asc] {{ nct_repo }}/stable/deb/$(ARCH) /"
+        filename: nvidia-container-toolkit
+        state: present
+
+    - name: Install the NVIDIA container toolkit
+      ansible.builtin.apt:
+        name:
+          - "nvidia-container-toolkit={{ nvidia_container_toolkit_version }}"
+          - "nvidia-container-toolkit-base={{ nvidia_container_toolkit_version }}"
+          - "libnvidia-container-tools={{ nvidia_container_toolkit_version }}"
+          - "libnvidia-container1={{ nvidia_container_toolkit_version }}"
+        update_cache: true
+        lock_timeout: 300
+
+    - name: Make nvidia containerd's default runtime
+      ansible.builtin.command:
+        cmd: nvidia-ctk runtime configure --runtime=containerd --config=/etc/containerd/config.toml --set-as-default
+      changed_when: true
+
+    - name: Check containerd still parses its config
+      ansible.builtin.command:
+        cmd: containerd config dump
+      changed_when: false
+
+    - name: Record the GPU stack versions in the image
+      ansible.builtin.copy:
+        dest: /etc/verda-gpu-node-release
+        mode: "0644"
+        content: |
+          NVIDIA_DRIVER_BRANCH={{ nvidia_driver_branch }}
+          CUDA_VERSION={{ cuda_version }}
+          NVIDIA_CONTAINER_TOOLKIT_VERSION={{ nvidia_container_toolkit_version }}
+
+- import_playbook: sysprep.yml

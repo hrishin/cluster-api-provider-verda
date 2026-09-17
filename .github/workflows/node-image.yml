@@ -1,0 +1,212 @@
+# Builds the Kubernetes node images (packer/) and publishes them as Verda OS
+# volumes. Two stages: the node image, then the GPU image layered on a clone
+# of it. PRs validate only; pushes to main and manual runs build.
+# Repository secrets: VERDA_CLIENT_ID, VERDA_CLIENT_SECRET (the Verda project
+# the images are published in) and NODE_SSH_PRIVATE_KEY (the node key pair's
+# private half; its public half is baked into the images and the GPU stage
+# logs in with it).
+name: node-image
+
+on:
+  pull_request:
+    paths:
+      - packer/**
+      - "!packer/README.md"
+      - .github/workflows/node-image.yml
+  push:
+    branches: [main]
+    paths:
+      - packer/**
+      - "!packer/README.md"
+      - .github/workflows/node-image.yml
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Verda datacenter
+        default: FIN-03
+      instance_type:
+        description: Build instance type
+        default: CPU.4V.16G
+      source_image:
+        description: Verda image_type to start from
+        default: ubuntu-24.04
+      artifact_locations:
+        description: Extra datacenters to clone into (comma-separated)
+        default: ""
+      is_spot:
+        description: Build on a spot instance
+        type: boolean
+        default: false
+      stages:
+        description: Which images to build
+        type: choice
+        options: [both, node, gpu]
+        default: both
+      node_image:
+        description: "gpu stage only: node image to start from (volume ID or name; default: the newest k8s-node-* in the location, or this run's)"
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  PACKER_VERSION: "1.16.0"
+  PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: packer fmt -check -diff packer/
+      - run: packer/build.sh validate
+
+  build:
+    needs: validate
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.stages != 'gpu')
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: node-image-build
+      cancel-in-progress: false
+    timeout-minutes: 90
+    outputs:
+      image_name: ${{ steps.manifest.outputs.image_name }}
+    env:
+      VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
+      VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
+      NODE_SSH_KEY_FILE: ${{ runner.temp }}/node-ssh-key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the node SSH key
+        env:
+          NODE_SSH_PRIVATE_KEY: ${{ secrets.NODE_SSH_PRIVATE_KEY }}
+        run: |
+          [ -n "$NODE_SSH_PRIVATE_KEY" ] || { echo "NODE_SSH_PRIVATE_KEY secret is not set" >&2; exit 1; }
+          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$NODE_SSH_KEY_FILE")
+          ssh-keygen -y -f "$NODE_SSH_KEY_FILE" >/dev/null
+
+      - name: Build and publish the node image
+        env:
+          LOCATION: ${{ inputs.location || 'FIN-03' }}
+          INSTANCE_TYPE: ${{ inputs.instance_type || 'CPU.4V.16G' }}
+          SOURCE_IMAGE: ${{ inputs.source_image || 'ubuntu-24.04' }}
+          ARTIFACT_LOCATIONS: ${{ inputs.artifact_locations || '' }}
+          IS_SPOT: ${{ inputs.is_spot || 'false' }}
+        run: |
+          export BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          locations="$(jq -cn --arg l "$ARTIFACT_LOCATIONS" '$l | split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')"
+          packer/build.sh build -color=false \
+            -var "location=$LOCATION" \
+            -var "instance_type=$INSTANCE_TYPE" \
+            -var "source_image=$SOURCE_IMAGE" \
+            -var "artifact_locations=$locations" \
+            -var "is_spot=$IS_SPOT"
+
+      - name: Summary
+        id: manifest
+        if: always()
+        run: |
+          if [ -f packer/packer-manifest.json ]; then
+            echo "image_name=$(jq -r '.builds[-1].custom_data.image_name' packer/packer-manifest.json)" >> "$GITHUB_OUTPUT"
+            jq -r '.builds[-1] |
+              "## Node image published\n\n| | |\n|---|---|\n" +
+              "| Image | `\(.custom_data.image_name)` |\n" +
+              "| Kubernetes | \(.custom_data.kubernetes_version) |\n" +
+              "| Source image | \(.custom_data.source_image) |\n" +
+              "| Volume ID (\(.custom_data.location)) | `\(.artifact_id)` |\n"
+            ' packer/packer-manifest.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Node image build failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: packer-manifest-node
+          path: packer/packer-manifest.json
+          if-no-files-found: ignore
+
+  build-gpu:
+    needs: [validate, build]
+    # Runs after the node stage, or alone when only the gpu stage is requested.
+    if: >-
+      always() && needs.validate.result == 'success'
+      && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.stages == 'gpu'))
+      && (github.event_name == 'workflow_dispatch' && inputs.stages != 'node'
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: node-image-build
+      cancel-in-progress: false
+    timeout-minutes: 120
+    env:
+      VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
+      VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
+      NODE_SSH_KEY_FILE: ${{ runner.temp }}/node-ssh-key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the node SSH key
+        env:
+          NODE_SSH_PRIVATE_KEY: ${{ secrets.NODE_SSH_PRIVATE_KEY }}
+        run: |
+          [ -n "$NODE_SSH_PRIVATE_KEY" ] || { echo "NODE_SSH_PRIVATE_KEY secret is not set" >&2; exit 1; }
+          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$NODE_SSH_KEY_FILE")
+          ssh-keygen -y -f "$NODE_SSH_KEY_FILE" >/dev/null
+
+      - name: Build and publish the GPU image
+        env:
+          LOCATION: ${{ inputs.location || 'FIN-03' }}
+          INSTANCE_TYPE: ${{ inputs.instance_type || 'CPU.4V.16G' }}
+          ARTIFACT_LOCATIONS: ${{ inputs.artifact_locations || '' }}
+          IS_SPOT: ${{ inputs.is_spot || 'false' }}
+          # The node image from this run when there is one, else the input, else the newest.
+          NODE_IMAGE: ${{ needs.build.outputs.image_name || inputs.node_image || '' }}
+        run: |
+          export BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          locations="$(jq -cn --arg l "$ARTIFACT_LOCATIONS" '$l | split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')"
+          packer/build.sh build-gpu -color=false \
+            -var "instance_type=$INSTANCE_TYPE" \
+            -var "artifact_locations=$locations" \
+            -var "is_spot=$IS_SPOT"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f packer/packer-manifest.json ]; then
+            jq -r '.builds[-1] |
+              "## GPU node image published\n\n| | |\n|---|---|\n" +
+              "| Image | `\(.custom_data.image_name)` |\n" +
+              "| Kubernetes | \(.custom_data.kubernetes_version) |\n" +
+              "| Built from | \(.custom_data.source_node_image) |\n" +
+              "| Volume ID (\(.custom_data.location)) | `\(.artifact_id)` |\n"
+            ' packer/packer-manifest.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## GPU node image build failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: packer-manifest-gpu
+          path: packer/packer-manifest.json
+          if-no-files-found: ignore

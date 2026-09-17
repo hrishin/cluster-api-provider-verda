@@ -1,0 +1,65 @@
+# Kubernetes node image for Verda: image-builder's node roles (mirrors
+# images/capi/ansible/node.yml), Verda-specific settings, and a conservative
+# sysprep. image-builder's own sysprep role also removes netplan, /etc/hosts and
+# authorized_keys, which would leave a Verda volume-booted instance unreachable.
+---
+- name: Provision Kubernetes node
+  hosts: all
+  become: true
+  vars:
+    node_custom_roles_pre: ""
+    node_custom_roles_post: ""
+    custom_role_names: ""
+    node_ansible_tmpdir: ""
+    system: linux
+    arch_uname: "{{ ansible_facts['architecture'] }}"
+    arch: "{{ {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64', 'ppc64le': 'ppc64le'}.get(arch_uname, 'unsupported') }}"
+    node_environment:
+      http_proxy: "{{ http_proxy | default('') }}"
+      https_proxy: "{{ https_proxy | default('') }}"
+      no_proxy: "{{ no_proxy | default('') }}"
+      HTTP_PROXY: "{{ http_proxy | default('') }}"
+      HTTPS_PROXY: "{{ https_proxy | default('') }}"
+      NO_PROXY: "{{ no_proxy | default('') }}"
+      PYTHONPATH: "{{ python_path }}"
+
+  tasks:
+    # `node` pulls in `setup` via meta dependencies.
+    - name: Include node role
+      ansible.builtin.include_role:
+        name: node
+    - name: Include providers role
+      ansible.builtin.include_role:
+        name: providers
+    - name: Include containerd role
+      ansible.builtin.include_role:
+        name: containerd
+    - name: Include kubernetes role
+      ansible.builtin.include_role:
+        name: kubernetes
+
+    # image-builder's containerd role writes `version = 3`; containerd 2.3's
+    # native config version is 4, and the NVIDIA container toolkit (GPU
+    # operator) drops its runtime config into conf.d/ as version 4 — which
+    # containerd refuses to import when the root is older ("drop-in config
+    # version 4 higher than root config version 3"), taking the node down.
+    # Pin the root to the version this containerd itself defaults to.
+    - name: Align containerd's config version with the installed containerd
+      ansible.builtin.shell: |
+        set -e
+        v="$(containerd config default | sed -n 's/^version = //p' | head -1)"
+        [ -n "$v" ] && sed -i "s/^version = [0-9]*$/version = $v/" /etc/containerd/config.toml
+        containerd config dump >/dev/null
+      changed_when: true
+
+    # kgateway runs hostNetwork as non-root on :80/:443 (no cloud LB on Verda).
+    - name: Allow unprivileged processes to bind low ports
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_unprivileged_port_start
+        value: "0"
+        sysctl_file: /etc/sysctl.d/90-unprivileged-ports.conf
+        reload: true
+
+  environment: "{{ node_environment }}"
+
+- import_playbook: sysprep.yml

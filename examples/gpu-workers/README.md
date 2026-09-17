@@ -5,9 +5,10 @@ NVMe data volume to the `demo` cluster from the [ha-cluster](../ha-cluster/)
 example, then installs the NVIDIA device plugin so pods can request
 `nvidia.com/gpu`.
 
-The node OS volume must contain the NVIDIA driver and the NVIDIA container
-toolkit (Verda's `*-cuda-*` images do; an image-builder volume needs them
-added), and containerd must use the `nvidia` runtime.
+The pool boots from the **GPU node image** (`k8s-gpu-node-*`, stage 2 of
+`packer/`), which carries the NVIDIA driver, CUDA and the container toolkit
+with `nvidia` as containerd's default runtime; set `VERDA_GPU_OS_VOLUME_ID`
+to it.
 
 ```sh
 export CLUSTER_NAME=demo

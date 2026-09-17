@@ -6,7 +6,7 @@ spec:
   template:
     spec:
       instanceType: 1RTXPRO6000.30V
-      osVolumeID: ${VERDA_OS_VOLUME_ID}
+      osVolumeID: ${VERDA_GPU_OS_VOLUME_ID}
       sshKeyIDs:
         - ${VERDA_SSH_KEY_ID}
       spot: true

@@ -1,0 +1,12 @@
+{
+  "kubernetes_version": "1.35.8",
+  "kubernetes_cni_deb_version": "1.8.0-1.1",
+  "containerd_version": "2.3.2",
+  "runc_version": "1.4.3",
+  "crictl_version": "1.35.0",
+  "image_builder_ref": "v0.1.55",
+  "ansible_core_version": "2.18.18",
+  "nvidia_driver_branch": "570",
+  "cuda_version": "12-8",
+  "nvidia_container_toolkit_version": "1.17.8-1"
+}

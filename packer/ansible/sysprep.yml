@@ -1,0 +1,108 @@
+# Shared last play of both image builds: leave the instance ready to be
+# captured as an image.
+---
+- name: Prepare for imaging
+  hosts: all
+  become: true
+  tasks:
+    - name: Disable apt-daily timers and unattended upgrades
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+        - unattended-upgrades.service
+      failed_when: false
+
+    - name: Clean apt caches
+      ansible.builtin.apt:
+        autoclean: true
+        autoremove: true
+        lock_timeout: 300
+
+    - name: Remove apt package lists
+      ansible.builtin.file:
+        path: /var/lib/apt/lists
+        state: absent
+
+    - name: Find SSH host keys
+      ansible.builtin.find:
+        paths: /etc/ssh
+        patterns: "ssh_host_*"
+      register: ssh_host_keys
+
+    - name: Remove SSH host keys
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ ssh_host_keys.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Create ssh.service drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/ssh.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Regenerate missing SSH host keys on boot
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.service.d/10-regenerate-host-keys.conf
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/ssh-keygen -A
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Reset cloud-init and machine-id
+      ansible.builtin.command: cloud-init clean --logs --machine-id
+      changed_when: true
+
+    - name: Clear hostname
+      ansible.builtin.copy:
+        dest: /etc/hostname
+        content: ""
+        mode: "0644"
+
+    - name: Remove build-time leftovers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /root/.bash_history
+        - /root/.ansible
+        - /tmp/.ansible
+        - /var/log/wtmp
+        - /var/log/lastlog
+
+    - name: Find log files
+      ansible.builtin.find:
+        paths: /var/log
+        patterns: "*.log"
+        recurse: true
+        hidden: true
+      register: log_files
+
+    - name: Truncate log files
+      ansible.builtin.command:
+        argv: ["truncate", "-s", "0", "{{ item.path }}"]
+      loop: "{{ log_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      changed_when: true
+
+    - name: Vacuum the journal
+      ansible.builtin.shell: journalctl --rotate && journalctl --vacuum-time=1s
+      changed_when: true
+
+    - name: Trim the filesystem
+      ansible.builtin.command: fstrim -av
+      changed_when: true
+      failed_when: false
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

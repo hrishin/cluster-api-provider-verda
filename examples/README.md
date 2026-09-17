@@ -9,7 +9,8 @@ export VERDA_CLIENT_ID=...          # for the cloud controller manager in the wo
 export VERDA_CLIENT_SECRET=...
 export VERDA_LOCATION=FIN-03
 export VERDA_SSH_KEY_ID=<verda ssh key id>
-export VERDA_OS_VOLUME_ID=k8s-node-v1.35.8-ubuntu-24.04   # ID or exact name of a node OS volume
+export VERDA_OS_VOLUME_ID=k8s-node-v1.35.8-ubuntu-24.04-<build>       # ID or exact name of the node image
+export VERDA_GPU_OS_VOLUME_ID=k8s-gpu-node-v1.35.8-cuda12-8-<build>  # the GPU node image (gpu-workers example)
 export KUBERNETES_VERSION=v1.35.8
 ```
 

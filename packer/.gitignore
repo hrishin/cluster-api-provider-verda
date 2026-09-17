@@ -1,0 +1,6 @@
+.image-builder/
+.venv/
+packer-manifest.json
+packer_cache/
+crash.log
+*.auto.pkrvars.*

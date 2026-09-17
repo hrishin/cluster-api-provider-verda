@@ -28,8 +28,37 @@ Nothing Verda-specific is required: the provider does not depend on
 cloud-init (it is fine if it is present) and there is no metadata service to
 query.
 
-## Building with image-builder
+## Building with Packer (recommended)
 
+[`packer/`](../packer/README.md) builds the node images end to end on Verda
+in two stages: the `thevilledev/verda` Packer builder boots a stock Ubuntu
+instance, runs image-builder's node roles (`ansible/verda-node.yml`) and
+publishes `k8s-node-v<kubernetes>-<source image>-<build id>`; the GPU stage
+then clones that volume and layers the NVIDIA driver, CUDA and container
+toolkit on it (`ansible/verda-gpu-node.yml`), publishing
+`k8s-gpu-node-v<kubernetes>-cuda<version>-<build id>`. All versions are
+pinned in `packer/versions.pkrvars.json`.
+
+```sh
+# Verda credentials come from VERDA_CLIENT_ID/VERDA_CLIENT_SECRET or ~/.verda/credentials;
+# the node SSH key pair from ~/.ssh/verda-k8s-nodes (or NODE_SSH_KEY_FILE).
+packer/build.sh validate
+packer/build.sh build                          # stage 1, about 10 minutes on a CPU.4V.16G
+packer/build.sh build-gpu                      # stage 2 from the newest node image, about 15 minutes
+packer/scripts/list-images.sh                  # shows the volumes to use as VERDA_OS_VOLUME_ID
+```
+
+Use `k8s-node-*` for control planes and CPU workers and `k8s-gpu-node-*`
+for GPU pools (see `examples/gpu-workers`).
+
+The `node-image` GitHub workflow validates on pull requests and builds on
+pushes to `main` that touch `packer/`, or on demand; it needs the
+`VERDA_CLIENT_ID`, `VERDA_CLIENT_SECRET` and `NODE_SSH_PRIVATE_KEY`
+repository secrets.
+
+## Building by hand with image-builder
+
+If you would rather not use Packer,
 [kubernetes-sigs/image-builder](https://github.com/kubernetes-sigs/image-builder)
 has no Verda target, but its `raw`/`qemu` builders produce a disk image with
 the right contents:

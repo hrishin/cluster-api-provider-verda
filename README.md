@@ -168,7 +168,7 @@ block and to the worker `KubeadmConfigTemplate.preKubeadmCommands`.
 
 ## Further reading
 
-- [docs/node-image.md](docs/node-image.md) — what a node image needs and how to build the OS volume
+- [docs/node-image.md](docs/node-image.md) — what a node image needs; [packer/](packer/README.md) builds it
 - [docs/api-versioning.md](docs/api-versioning.md) — API stability and how a new version would be added
 - [examples/](examples/) — HA cluster, autoscaling, GPU workers
 

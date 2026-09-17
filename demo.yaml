@@ -1,0 +1,314 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  labels:
+    cluster.x-k8s.io/cluster-name: capi-fin3-dev-1
+  name: capi-fin3-dev-1
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - 192.168.0.0/16
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: capi-fin3-dev-1-control-plane
+  infrastructureRef:
+    apiGroup: infrastructure.cluster.x-k8s.io
+    kind: VerdaCluster
+    name: capi-fin3-dev-1
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaCluster
+metadata:
+  name: capi-fin3-dev-1
+  namespace: default
+spec:
+  controlPlaneLoadBalancer:
+    enabled: true
+    instanceType: CPU.4V.16G
+    sshKeyIDs:
+    - 5ba6b5ca-a721-4d3a-ac47-9411cb900e67
+  location: FIN-03
+  serviceLoadBalancer:
+    enabled: true
+    instanceType: CPU.4V.16G
+    sshKeyIDs:
+    - 5ba6b5ca-a721-4d3a-ac47-9411cb900e67
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: capi-fin3-dev-1-control-plane
+  namespace: default
+spec:
+  template:
+    spec:
+      instanceType: CPU.4V.16G
+      osVolumeID: k8s-node-v1.35.8-ubuntu-24.04-20260913-239577e
+      sshKeyIDs:
+      - 5ba6b5ca-a721-4d3a-ac47-9411cb900e67
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: capi-fin3-dev-1-control-plane
+  namespace: default
+spec:
+  kubeadmConfigSpec:
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+        - name: provider-id
+          value: verda://{{ ds.meta_data.hostname }}
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+        - name: provider-id
+          value: verda://{{ ds.meta_data.hostname }}
+  machineTemplate:
+    spec:
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: VerdaMachineTemplate
+        name: capi-fin3-dev-1-control-plane
+  replicas: 3
+  version: v1.35.8
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VerdaMachineTemplate
+metadata:
+  name: capi-fin3-dev-1-md-0
+  namespace: default
+spec:
+  template:
+    spec:
+      instanceType: CPU.4V.16G
+      osVolumeID: k8s-node-v1.35.8-ubuntu-24.04-20260913-239577e
+      sshKeyIDs:
+      - 5ba6b5ca-a721-4d3a-ac47-9411cb900e67
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: capi-fin3-dev-1-md-0
+  namespace: default
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+          - name: cloud-provider
+            value: external
+          - name: provider-id
+            value: verda://{{ ds.meta_data.hostname }}
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: capi-fin3-dev-1-md-0
+  namespace: default
+spec:
+  clusterName: capi-fin3-dev-1
+  replicas: 1
+  template:
+    spec:
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: capi-fin3-dev-1-md-0
+      clusterName: capi-fin3-dev-1
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: VerdaMachineTemplate
+        name: capi-fin3-dev-1-md-0
+      version: v1.35.8
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: capi-fin3-dev-1-control-plane
+  namespace: default
+  annotations:
+    cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size=0
+    cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size=2
+spec:
+  checks:
+    nodeStartupTimeoutSeconds: 1200
+    unhealthyNodeConditions:
+    - status: Unknown
+      timeoutSeconds: 300
+      type: Ready
+    - status: "False"
+      timeoutSeconds: 300
+      type: Ready
+  clusterName: capi-fin3-dev-1
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 100%
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: capi-fin3-dev-1-md-0
+  namespace: default
+spec:
+  checks:
+    nodeStartupTimeoutSeconds: 1200
+    unhealthyNodeConditions:
+    - status: Unknown
+      timeoutSeconds: 300
+      type: Ready
+    - status: "False"
+      timeoutSeconds: 300
+      type: Ready
+  clusterName: capi-fin3-dev-1
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 40%
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: capi-fin3-dev-1-md-0
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: capi-fin3-dev-1-verda-ccm-credentials
+  namespace: default
+stringData:
+  credentials.yaml: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: verda-cloud-credentials
+      namespace: kube-system
+    stringData:
+      client-id: 5FEic0o5dzQFeAa8AIM05
+      client-secret: 9SdchMvh9798me6EnUnW8Go3lAB9EB8dp5OQ5BPhee
+type: addons.cluster.x-k8s.io/resource-set
+---
+apiVersion: v1
+data:
+  verda-cloud-controller-manager.yaml: |
+    # Verda cloud controller manager, to be applied to a workload cluster whose
+    # kubelets run with --cloud-provider=external. Credentials come from the
+    # verda-cloud-credentials Secret in kube-system (keys: client-id, client-secret).
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: verda-cloud-controller-manager
+      namespace: kube-system
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: verda-cloud-controller-manager
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+      - kind: ServiceAccount
+        name: verda-cloud-controller-manager
+        namespace: kube-system
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: verda-cloud-controller-manager
+      namespace: kube-system
+      labels:
+        app.kubernetes.io/name: verda-cloud-controller-manager
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: verda-cloud-controller-manager
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: verda-cloud-controller-manager
+        spec:
+          serviceAccountName: verda-cloud-controller-manager
+          # Must run before the CNI and on tainted control plane nodes.
+          hostNetwork: true
+          dnsPolicy: Default
+          priorityClassName: system-cluster-critical
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+          tolerations:
+            - key: node.cloudprovider.kubernetes.io/uninitialized
+              value: "true"
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              effect: NoSchedule
+            - key: node.kubernetes.io/not-ready
+              effect: NoSchedule
+            - key: node.kubernetes.io/network-unavailable
+              effect: NoSchedule
+          containers:
+            - name: cloud-controller-manager
+              image: docker.io/hriships/verda-cloud-controller-manager:v0.2.0
+              args:
+                - --cloud-provider=verda
+                - --leader-elect=true
+                - --allow-untagged-cloud=true
+                - --use-service-account-credentials=false
+                - --secure-port=10258
+                - --v=2
+              env:
+                - name: VERDA_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: client-id
+                - name: VERDA_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: client-secret
+                - name: VERDA_BASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: verda-cloud-credentials
+                      key: base-url
+                      optional: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+kind: ConfigMap
+metadata:
+  name: capi-fin3-dev-1-verda-ccm
+  namespace: default
+---
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: capi-fin3-dev-1-verda-ccm
+  namespace: default
+spec:
+  clusterSelector:
+    matchLabels:
+      cluster.x-k8s.io/cluster-name: capi-fin3-dev-1
+  resources:
+  - kind: Secret
+    name: capi-fin3-dev-1-verda-ccm-credentials
+  - kind: ConfigMap
+    name: capi-fin3-dev-1-verda-ccm
+  strategy: Reconcile
