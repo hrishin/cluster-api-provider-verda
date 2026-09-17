@@ -71,7 +71,7 @@ func TestServiceLoadBalancer(t *testing.T) {
 	kube := fake.NewClientset(lbSecret(), nginx, dns, later, clusterIP,
 		node("w-0", "10.0.0.1", true, nil),
 		node("w-1", "10.0.0.2", true, nil),
-		node("w-2", "10.0.0.3", false, nil),
+		node("w-2", "10.0.0.3", false, nil), // not Ready yet: still a backend, health checks decide
 		node("cp-0", "10.0.0.9", true, map[string]string{excludeFromLBLabel: ""}),
 	)
 	updater := &loadbalancer.FakeUpdater{}
@@ -93,14 +93,14 @@ func TestServiceLoadBalancer(t *testing.T) {
 		t.Fatalf("unexpected files pushed: %+v", files)
 	}
 	cds, lds := files[0].Content, files[1].Content
-	for _, want := range []string{"default_nginx_80_tcp", "kube_system_dns_53_udp", "10.0.0.1, port_value: 31080", "10.0.0.2, port_value: 31080", "upstream_proxy_protocol"} {
+	for _, want := range []string{"default_nginx_80_tcp", "kube_system_dns_53_udp", "10.0.0.1, port_value: 31080", "10.0.0.2, port_value: 31080", "10.0.0.3, port_value: 31080", "upstream_proxy_protocol"} {
 		if !strings.Contains(cds, want) {
 			t.Errorf("cds missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"10.0.0.3", "10.0.0.9", "default_later_80_tcp", "default_internal"} {
+	for _, unwanted := range []string{"10.0.0.9", "default_later_80_tcp", "default_internal"} {
 		if strings.Contains(cds, unwanted) || strings.Contains(lds, unwanted) {
-			t.Errorf("config should not contain %q (not ready, excluded, conflicting or ClusterIP)", unwanted)
+			t.Errorf("config should not contain %q (excluded node, conflicting or ClusterIP)", unwanted)
 		}
 	}
 

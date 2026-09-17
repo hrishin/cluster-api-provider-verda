@@ -199,8 +199,12 @@ func (l *serviceLB) sync(ctx context.Context, lb *lbConfig, current *corev1.Serv
 	return nil
 }
 
-// backendNodes returns the addresses of Ready nodes that are not excluded
-// from external load balancers.
+// backendNodes returns the addresses of the nodes eligible as backends. This
+// mirrors the service controller's own node set (StableLoadBalancerNodeSet):
+// nodes are excluded only by the exclusion label or deletion, never by
+// readiness. The service controller does not call back when a node becomes
+// Ready, so filtering on readiness here would leave the load balancer stale;
+// envoy's active health checks keep traffic off nodes that are not serving.
 func (l *serviceLB) backendNodes(ctx context.Context) ([]string, error) {
 	nodes, err := l.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -212,7 +216,7 @@ func (l *serviceLB) backendNodes(ctx context.Context) ([]string, error) {
 		if _, excluded := node.Labels[excludeFromLBLabel]; excluded {
 			continue
 		}
-		if !nodeReady(node) {
+		if !node.DeletionTimestamp.IsZero() {
 			continue
 		}
 		if addr := nodeAddress(node); addr != "" {
@@ -298,15 +302,6 @@ func sanitize(s string) string {
 
 func status(address string) *corev1.LoadBalancerStatus {
 	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: address}}}
-}
-
-func nodeReady(node *corev1.Node) bool {
-	for _, c := range node.Status.Conditions {
-		if c.Type == corev1.NodeReady {
-			return c.Status == corev1.ConditionTrue
-		}
-	}
-	return false
 }
 
 // nodeAddress prefers the internal IP (on Verda identical to the public one).
