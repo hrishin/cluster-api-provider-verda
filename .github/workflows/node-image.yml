@@ -82,7 +82,6 @@ jobs:
     env:
       VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
       VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
-      NODE_SSH_KEY_FILE: ${{ runner.temp }}/node-ssh-key
     steps:
       - uses: actions/checkout@v5
       - uses: hashicorp/setup-packer@v3
@@ -96,8 +95,10 @@ jobs:
           NODE_SSH_PRIVATE_KEY: ${{ secrets.NODE_SSH_PRIVATE_KEY }}
         run: |
           [ -n "$NODE_SSH_PRIVATE_KEY" ] || { echo "NODE_SSH_PRIVATE_KEY secret is not set" >&2; exit 1; }
-          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$NODE_SSH_KEY_FILE")
-          ssh-keygen -y -f "$NODE_SSH_KEY_FILE" >/dev/null
+          key="$RUNNER_TEMP/node-ssh-key"
+          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$key")
+          ssh-keygen -y -f "$key" >/dev/null
+          echo "NODE_SSH_KEY_FILE=$key" >> "$GITHUB_ENV"
 
       - name: Build and publish the node image
         env:
@@ -107,7 +108,8 @@ jobs:
           ARTIFACT_LOCATIONS: ${{ inputs.artifact_locations || '' }}
           IS_SPOT: ${{ inputs.is_spot || 'false' }}
         run: |
-          export BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          export BUILD_ID
           locations="$(jq -cn --arg l "$ARTIFACT_LOCATIONS" '$l | split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')"
           packer/build.sh build -color=false \
             -var "location=$LOCATION" \
@@ -156,7 +158,6 @@ jobs:
     env:
       VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
       VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
-      NODE_SSH_KEY_FILE: ${{ runner.temp }}/node-ssh-key
     steps:
       - uses: actions/checkout@v5
       - uses: hashicorp/setup-packer@v3
@@ -170,8 +171,10 @@ jobs:
           NODE_SSH_PRIVATE_KEY: ${{ secrets.NODE_SSH_PRIVATE_KEY }}
         run: |
           [ -n "$NODE_SSH_PRIVATE_KEY" ] || { echo "NODE_SSH_PRIVATE_KEY secret is not set" >&2; exit 1; }
-          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$NODE_SSH_KEY_FILE")
-          ssh-keygen -y -f "$NODE_SSH_KEY_FILE" >/dev/null
+          key="$RUNNER_TEMP/node-ssh-key"
+          (umask 077; printf '%s\n' "$NODE_SSH_PRIVATE_KEY" > "$key")
+          ssh-keygen -y -f "$key" >/dev/null
+          echo "NODE_SSH_KEY_FILE=$key" >> "$GITHUB_ENV"
 
       - name: Build and publish the GPU image
         env:
@@ -182,7 +185,8 @@ jobs:
           # The node image from this run when there is one, else the input, else the newest.
           NODE_IMAGE: ${{ needs.build.outputs.image_name || inputs.node_image || '' }}
         run: |
-          export BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          export BUILD_ID
           locations="$(jq -cn --arg l "$ARTIFACT_LOCATIONS" '$l | split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')"
           packer/build.sh build-gpu -color=false \
             -var "instance_type=$INSTANCE_TYPE" \
