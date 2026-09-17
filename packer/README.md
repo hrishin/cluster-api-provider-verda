@@ -10,9 +10,11 @@ Two images, built in two stages, each a Verda OS volume:
    (`ansible/verda-gpu-node.yml`), with `nvidia` as containerd's default runtime.
    Nodes booted from it need only the NVIDIA device plugin (or the GPU operator
    with `driver.enabled=false` and `toolkit.enabled=false`). The stage builds on
-   a GPU instance (`1RTXPRO6000.30V` by default) and verifies the driver and the
-   container runtime against the card before capturing; the GPU image is always
-   derived from a node image, never from a different base.
+   a GPU instance — the first type in `GPU_INSTANCE_TYPES` (default
+   `1RTXPRO6000.30V,1RTXPRO6000.30V.CC,2RTXPRO6000.60V,1A100.22V`) that has
+   capacity, waiting up to `GPU_CAPACITY_WAIT` minutes for one — and verifies the
+   driver and the container runtime against the card before capturing; the GPU
+   image is always derived from a node image, never from a different base.
 
 Verda has no image import; a **detached OS volume** is its custom image
 (`POST /v1/instances` takes a volume ID as `image`). The

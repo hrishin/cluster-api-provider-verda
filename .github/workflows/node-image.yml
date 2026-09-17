@@ -27,9 +27,9 @@ on:
       instance_type:
         description: Build instance type for the node stage
         default: CPU.4V.16G
-      gpu_instance_type:
-        description: GPU instance type the gpu stage builds and verifies on
-        default: 1RTXPRO6000.30V
+      gpu_instance_types:
+        description: GPU instance types the gpu stage builds and verifies on, in order of preference (first with capacity wins)
+        default: 1RTXPRO6000.30V,1RTXPRO6000.30V.CC,2RTXPRO6000.60V,1A100.22V
       source_image:
         description: Verda image_type to start from
         default: ubuntu-24.04
@@ -189,7 +189,7 @@ jobs:
           IS_SPOT: ${{ inputs.is_spot || 'false' }}
           # The node image from this run when there is one, else the input, else the newest.
           NODE_IMAGE: ${{ needs.build.outputs.image_name || inputs.node_image || '' }}
-          GPU_INSTANCE_TYPE: ${{ inputs.gpu_instance_type || '1RTXPRO6000.30V' }}
+          GPU_INSTANCE_TYPES: ${{ inputs.gpu_instance_types || '1RTXPRO6000.30V,1RTXPRO6000.30V.CC,2RTXPRO6000.60V,1A100.22V' }}
         run: |
           BUILD_ID="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
           export BUILD_ID

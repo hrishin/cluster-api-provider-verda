@@ -17,7 +17,10 @@
 #      BUILD_ID           volume-name suffix (default: <date>-<git sha>)
 #      NODE_IMAGE         build-gpu: the node image to start from (ID or name)
 #      LOCATION           build-gpu: where to clone and build (default FIN-03)
-#      GPU_INSTANCE_TYPE  build-gpu: GPU instance type to build and verify on (default 1RTXPRO6000.30V)
+#      GPU_INSTANCE_TYPES build-gpu: GPU instance types to build and verify on, in order of
+#                         preference; the first one Verda has capacity for in the location is
+#                         used, waiting up to GPU_CAPACITY_WAIT minutes (default 20) for one
+#                         (default 1RTXPRO6000.30V,1RTXPRO6000.30V.CC,2RTXPRO6000.60V,1A100.22V)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -149,6 +152,30 @@ clone_node_image() {
   echo "$id"
 }
 
+# The first GPU instance type in $GPU_INSTANCE_TYPES that Verda has capacity
+# for in the location, polling until one appears or the wait runs out.
+pick_gpu_instance_type() {
+  local location="$1" types="${GPU_INSTANCE_TYPES:-1RTXPRO6000.30V,1RTXPRO6000.30V.CC,2RTXPRO6000.60V,1A100.22V}"
+  local wait_min="${GPU_CAPACITY_WAIT:-20}" available t deadline
+  deadline=$(( $(date +%s) + wait_min * 60 ))
+  while :; do
+    TOKEN="$(verda_token)"
+    available="$(api GET /instance-availability | jq -r --arg loc "$location" '.[] | select(.location_code == $loc) | .availabilities[]')"
+    for t in ${types//,/ }; do
+      if grep -qx "$t" <<<"$available"; then
+        echo "$t"
+        return
+      fi
+    done
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "no capacity in $location for any of $types after $wait_min minutes" >&2
+      exit 1
+    fi
+    log "no capacity in $location for $types; retrying in 60s"
+    sleep 60
+  done
+}
+
 # The builder deletes the build instance's OS volume (the clone) with the
 # instance; this only catches a clone left behind by an interrupted build.
 delete_volume_if_present() {
@@ -236,6 +263,8 @@ case "$action" in
     # on a volume boot, and the builder wants a non-empty list. Keys that no
     # longer exist (stage 1's temporary Packer key) make the API answer
     # "volume not found", so keep only the ones still in the project.
+    gpu_type="$(pick_gpu_instance_type "$location")"
+    log "building on $gpu_type"
     keys="$(api GET /sshkeys | jq -c --arg ids "${node_keys:-}" '[.[].id] as $existing | $ids | split(",") | map(select(length > 0 and IN($existing[])))')"
     [ "$keys" != "[]" ] || {
       echo "none of the node image's SSH keys ($node_keys) exist in the project any more" >&2
@@ -248,7 +277,7 @@ case "$action" in
       -var "ssh_private_key_file=$keydir/id" \
       -var "build_id=$id" \
       -var "gpu=true" \
-      -var "gpu_instance_type=${GPU_INSTANCE_TYPE:-1RTXPRO6000.30V}" \
+      -var "gpu_instance_type=$gpu_type" \
       -var "location=$location" \
       -var "source_image=$clone" \
       -var "source_node_image=$node_name" \
