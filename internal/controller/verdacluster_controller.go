@@ -112,6 +112,11 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 	if cluster == nil {
+		if !verdaCluster.DeletionTimestamp.IsZero() {
+			// Never owned (or the owner is already gone): still clean up
+			// anything created under our finalizer, then let it go.
+			return r.reconcileOrphanDelete(ctx, verdaCluster)
+		}
 		log.Info("Waiting for Cluster controller to set OwnerRef on VerdaCluster")
 		return ctrl.Result{}, nil
 	}
@@ -144,6 +149,24 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return scope.reconcileDelete(ctx, verdaCluster)
 	}
 	return scope.reconcileNormal(ctx, cluster, verdaCluster)
+}
+
+// reconcileOrphanDelete deletes a VerdaCluster that has no owning Cluster.
+func (r *VerdaClusterReconciler) reconcileOrphanDelete(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (_ ctrl.Result, reterr error) {
+	patchHelper, err := patch.NewHelper(verdaCluster, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err := patchVerdaCluster(ctx, patchHelper, verdaCluster); err != nil {
+			reterr = kerrorsJoin(reterr, err)
+		}
+	}()
+	verdaClient, err := r.CloudFactory.ClientFor(ctx, cloud.Identity{Namespace: verdaCluster.Namespace, SecretName: verdaCluster.IdentitySecretName()})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return (&clusterScope{VerdaClusterReconciler: r, cloud: verdaClient}).reconcileDelete(ctx, verdaCluster)
 }
 
 // clusterScope is a reconciler bound to the cloud client of one cluster.

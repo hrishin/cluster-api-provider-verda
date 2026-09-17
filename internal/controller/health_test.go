@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -223,5 +224,35 @@ var _ = Describe("VerdaMachine hostname collisions", func() {
 		}, timeout, interval).Should(Succeed())
 		Expect(vm.Status.InstanceID).To(BeEmpty())
 		Expect(fakeCloud.Created).To(BeEmpty())
+	})
+})
+
+var _ = Describe("Orphaned objects", func() {
+	It("lets a VerdaCluster and a VerdaMachine without owners be deleted", func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "orphan-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		vc := &infrav1.VerdaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "orphan", Namespace: ns.Name},
+			Spec:       infrav1.VerdaClusterSpec{Location: "FIN-03", ControlPlaneLoadBalancer: infrav1.ControlPlaneLoadBalancer{Enabled: ptr.To(true)}},
+		}
+		Expect(k8sClient.Create(ctx, vc)).To(Succeed())
+		vm := &infrav1.VerdaMachine{
+			ObjectMeta: metav1.ObjectMeta{Name: "orphan", Namespace: ns.Name},
+			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		// Wait for the finalizers to be added, then delete.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vc), vc)).To(Succeed())
+			g.Expect(vc.Finalizers).To(ContainElement(infrav1.ClusterFinalizer))
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
+			g.Expect(vm.Finalizers).To(ContainElement(infrav1.MachineFinalizer))
+		}, timeout, interval).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, vc)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, vm)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(vc), &infrav1.VerdaCluster{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), &infrav1.VerdaMachine{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 })
