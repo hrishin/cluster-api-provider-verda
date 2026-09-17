@@ -161,7 +161,7 @@ block and to the worker `KubeadmConfigTemplate.preKubeadmCommands`.
   pools are not planned; use MachineDeployments with cluster-autoscaler.
 - The service load balancer is a single instance per cluster (no HA), TCP/UDP
   only (no SCTP), and does not terminate TLS.
-- Only one API version (`v1beta1`); see docs/api-versioning.md.
+- Only one API version (`v1beta1`); see [docs/api-versioning.md](docs/api-versioning.md).
 
 Verified live (2026-09): a single control plane + one worker in FIN-03 booted
 from an image-builder OS volume, with `Machine`s reaching `Running` and
