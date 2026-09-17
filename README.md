@@ -149,7 +149,7 @@ make run &
 export CLUSTER_NAME=demo KUBERNETES_VERSION=v1.35.8
 export CONTROL_PLANE_ENDPOINT_HOST=demo.example.com   # DNS name you control
 export VERDA_LOCATION=FIN-03 VERDA_SSH_KEY_ID=<ssh key id>
-export VERDA_OS_VOLUME_ID=<detached OS volume built with image-builder>
+# VERDA_OS_VOLUME_ID defaults to the current packer/ node image (k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e)
 clusterctl generate cluster $CLUSTER_NAME --from templates/cluster-template.yaml | kubectl apply -f -
 ```
 

@@ -91,7 +91,8 @@ import endpoint today, so the practical route is:
    (`verda vm delete --keep-volumes`). The detached OS volume is the node
    image; name it e.g. `k8s-node-v1.35.8-ubuntu-24.04-<date>`.
 
-Reference the volume by ID or name in `VERDA_OS_VOLUME_ID`. The provider
+Reference the volume by ID or name in `VERDA_OS_VOLUME_ID` (the templates default to
+the current image, `k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e`). The provider
 clones it per machine (`<namespace>-<machine>-os`) and deletes the clone with
 the instance; the source volume is never modified. Verda bills detached
 volumes, so keep one per Kubernetes minor you run.

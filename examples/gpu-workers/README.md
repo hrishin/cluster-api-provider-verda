@@ -12,7 +12,7 @@ to it.
 
 ```sh
 export CLUSTER_NAME=demo
-envsubst < gpu-pool.yaml | kubectl apply -f -
+clusterctl generate yaml --from gpu-pool.yaml | kubectl apply -f -
 watch kubectl get machinedeployment,machines
 
 kubectl --kubeconfig demo.kubeconfig apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.0/deployments/static/nvidia-device-plugin.yml
