@@ -155,6 +155,25 @@ func (r *clusterScope) publishServiceLoadBalancerSecret(ctx context.Context, clu
 	return workloadClient.Update(ctx, existing)
 }
 
+// removeServiceLoadBalancerSecret deletes kube-system/verda-service-lb from
+// the workload cluster so the cloud controller manager stops reporting
+// addresses for a load balancer that no longer exists. Best effort: the
+// workload cluster may be unreachable or gone.
+func (r *clusterScope) removeServiceLoadBalancerSecret(ctx context.Context, cluster *clusterv1.Cluster) {
+	kubeconfigBytes, err := kubeconfig.FromSecret(ctx, r.Client, client.ObjectKeyFromObject(cluster))
+	if err != nil {
+		return
+	}
+	workloadClient, err := r.workloadClient(kubeconfigBytes)
+	if err != nil {
+		return
+	}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: infrav1.ServiceLoadBalancerSecretName, Namespace: metav1.NamespaceSystem}}
+	if err := workloadClient.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+		ctrl.LoggerFrom(ctx).V(4).Info("Could not remove the service load balancer secret from the workload cluster", "err", err.Error())
+	}
+}
+
 func (r *clusterScope) workloadClient(kubeconfigBytes []byte) (client.Client, error) {
 	if r.WorkloadClient != nil {
 		return r.WorkloadClient(kubeconfigBytes)

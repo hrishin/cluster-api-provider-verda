@@ -30,7 +30,10 @@ Implements the Cluster API **v1beta2 provider contract** (Cluster API v1.14+).
   `externalTrafficPolicy: Local` support. All Services share the instance's IP,
   so two Services cannot use the same port. Annotate a Service with
   `verda.cluster.x-k8s.io/proxy-protocol: "true"` to get PROXY protocol v2
-  upstream (e.g. for ingress-nginx `use-proxy-protocol`).
+  upstream (e.g. for ingress-nginx `use-proxy-protocol`). Setting `enabled`
+  back to `false` deletes the envoy instance and its volume and removes the
+  Secret from the workload cluster; existing LoadBalancer Services lose their
+  external IP.
 - **Boot from an image-builder OS volume.** `VerdaMachine.spec.osVolumeID`
   points at a detached OS volume by ID or exact name (e.g. built with
   image-builder, containing kubeadm/kubelet/containerd). The provider clones it per machine

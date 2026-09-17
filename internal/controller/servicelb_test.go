@@ -98,7 +98,34 @@ var _ = Describe("VerdaCluster with a service load balancer", func() {
 		Expect(string(published.Data["address"])).To(Equal("198.51.100.20"))
 		Expect(published.Data).To(HaveKey("ssh-privatekey"))
 		Expect(published.Data).To(HaveKey("host-publickey"))
-		Expect(k8sClient.Delete(ctx, published)).To(Succeed())
+
+		By("tearing the instance down when the load balancer is disabled")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())
+			verdaCluster.Spec.ServiceLoadBalancer.Enabled = ptr.To(false)
+			g.Expect(k8sClient.Update(ctx, verdaCluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())
+			g.Expect(verdaCluster.Status.ServiceLoadBalancer.InstanceID).To(BeEmpty())
+			g.Expect(conditions.Has(verdaCluster, infrav1.ServiceLoadBalancerReadyCondition)).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+		Expect(fakeCloud.Instances[lbID].Status).To(Equal("discontinued"))
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: infrav1.ServiceLoadBalancerSecretName}, &corev1.Secret{}))).To(BeTrue(), "workload secret removed")
+		Expect(ptr.Deref(verdaCluster.Status.Initialization.Provisioned, false)).To(BeTrue())
+
+		By("re-enabling creates a fresh instance")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())
+			verdaCluster.Spec.ServiceLoadBalancer.Enabled = ptr.To(true)
+			g.Expect(k8sClient.Update(ctx, verdaCluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())
+			g.Expect(verdaCluster.Status.ServiceLoadBalancer.InstanceID).NotTo(BeEmpty())
+			g.Expect(verdaCluster.Status.ServiceLoadBalancer.InstanceID).NotTo(Equal(lbID))
+			lbID = verdaCluster.Status.ServiceLoadBalancer.InstanceID
+		}, timeout, interval).Should(Succeed())
 
 		By("deleting the instance with the cluster")
 		Expect(k8sClient.Delete(ctx, verdaCluster)).To(Succeed())

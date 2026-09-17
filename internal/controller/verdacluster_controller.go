@@ -181,6 +181,20 @@ func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 		return result, err
 	}
 	if !verdaCluster.ServiceLoadBalancerEnabled() {
+		// Disabled after having been provisioned: tear the instance down
+		// rather than leaving it behind, then forget it.
+		if verdaCluster.Status.ServiceLoadBalancer.InstanceID != "" || verdaCluster.Status.ServiceLoadBalancer.Address != "" {
+			requeue, err := r.deleteServiceLoadBalancer(ctx, verdaCluster)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if requeue {
+				result.RequeueAfter = deletePollInterval
+				return result, nil
+			}
+			r.removeServiceLoadBalancerSecret(ctx, cluster)
+			verdaCluster.Status.ServiceLoadBalancer = infrav1.LoadBalancerStatus{}
+		}
 		conditions.Delete(verdaCluster, infrav1.ServiceLoadBalancerReadyCondition)
 		return result, nil
 	}
