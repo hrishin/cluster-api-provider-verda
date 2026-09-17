@@ -47,8 +47,14 @@ const (
 	// TagLoadBalancer holds the namespaced name of the VerdaCluster whose
 	// control plane load balancer the instance is.
 	TagLoadBalancer = "capi-loadbalancer"
+	// TagServiceLoadBalancer holds the namespaced name of the VerdaCluster
+	// whose service load balancer the instance is.
+	TagServiceLoadBalancer = "capi-service-loadbalancer"
 	// TagManagedBy identifies resources created by this provider.
 	TagManagedBy = "capi-managed-by"
+	// TagRole describes what an instance is for: control-plane, worker,
+	// load-balancer or service-load-balancer.
+	TagRole = "capi-role"
 	// ManagedByValue is the value of TagManagedBy.
 	ManagedByValue = "cluster-api-provider-verda"
 )

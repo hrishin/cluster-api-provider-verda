@@ -49,13 +49,19 @@ func defaultClusterSpec(spec *infrav1.VerdaClusterSpec) {
 	if spec.ControlPlaneEndpoint.Host != "" && spec.ControlPlaneEndpoint.Port == 0 {
 		spec.ControlPlaneEndpoint.Port = 6443
 	}
-	if spec.ControlPlaneLoadBalancer.Enabled != nil && *spec.ControlPlaneLoadBalancer.Enabled {
-		if spec.ControlPlaneLoadBalancer.InstanceType == "" {
-			spec.ControlPlaneLoadBalancer.InstanceType = infrav1.DefaultLoadBalancerInstanceType
-		}
-		if spec.ControlPlaneLoadBalancer.Image == "" {
-			spec.ControlPlaneLoadBalancer.Image = infrav1.DefaultLoadBalancerImage
-		}
+	defaultLoadBalancer(&spec.ControlPlaneLoadBalancer)
+	defaultLoadBalancer(&spec.ServiceLoadBalancer)
+}
+
+func defaultLoadBalancer(lb *infrav1.ControlPlaneLoadBalancer) {
+	if lb.Enabled == nil || !*lb.Enabled {
+		return
+	}
+	if lb.InstanceType == "" {
+		lb.InstanceType = infrav1.DefaultLoadBalancerInstanceType
+	}
+	if lb.Image == "" {
+		lb.Image = infrav1.DefaultLoadBalancerImage
 	}
 }
 

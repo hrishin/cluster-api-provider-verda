@@ -76,6 +76,8 @@ type VerdaClusterReconciler struct {
 	CloudFactory cloud.Factory
 	// LoadBalancer pushes backend updates to the haproxy instance.
 	LoadBalancer loadbalancer.Updater
+	// WorkloadClient builds clients for workload clusters; nil means DefaultWorkloadClient.
+	WorkloadClient WorkloadClientFunc
 	// WatchFilterValue is the label value used to filter events prior to reconciliation.
 	WatchFilterValue string
 }
@@ -151,6 +153,27 @@ type clusterScope struct {
 }
 
 func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
+	result, err := r.reconcileEndpoint(ctx, cluster, verdaCluster)
+	if err != nil {
+		return result, err
+	}
+	if !verdaCluster.ServiceLoadBalancerEnabled() {
+		conditions.Delete(verdaCluster, infrav1.ServiceLoadBalancerReadyCondition)
+		return result, nil
+	}
+	requeue, err := r.reconcileServiceLoadBalancer(ctx, cluster, verdaCluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if requeue && (result.RequeueAfter == 0 || result.RequeueAfter > lbPollInterval) {
+		result.RequeueAfter = lbPollInterval
+	}
+	return result, nil
+}
+
+// reconcileEndpoint establishes the control plane endpoint, with or without
+// the provider-managed control plane load balancer.
+func (r *clusterScope) reconcileEndpoint(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if verdaCluster.LoadBalancerEnabled() {
@@ -198,7 +221,7 @@ func setFailureDomains(verdaCluster *infrav1.VerdaCluster) {
 func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	keys, err := r.ensureLoadBalancerKeys(ctx, cluster, verdaCluster)
+	keys, err := r.ensureKeys(ctx, cluster, verdaCluster, loadBalancerSecretName(verdaCluster))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -352,16 +375,16 @@ func (r *clusterScope) createLoadBalancer(ctx context.Context, cluster *clusterv
 			cloud.TagManagedBy:    cloud.ManagedByValue,
 			cloud.TagCluster:      cluster.Namespace + "/" + cluster.Name,
 			cloud.TagLoadBalancer: clusterTagValue(verdaCluster),
-			"capi-role":           "load-balancer",
+			cloud.TagRole:         "load-balancer",
 		},
 	})
 }
 
-// ensureLoadBalancerKeys returns the SSH keys for the load balancer, creating
-// the Secret that holds them on first use.
-func (r *VerdaClusterReconciler) ensureLoadBalancerKeys(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (*loadbalancer.Keys, error) {
+// ensureKeys returns the SSH keys stored in the named Secret, creating it
+// with fresh keys on first use.
+func (r *VerdaClusterReconciler) ensureKeys(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, name string) (*loadbalancer.Keys, error) {
 	secret := &corev1.Secret{}
-	key := client.ObjectKey{Namespace: verdaCluster.Namespace, Name: loadBalancerSecretName(verdaCluster)}
+	key := client.ObjectKey{Namespace: verdaCluster.Namespace, Name: name}
 	err := r.Get(ctx, key, secret)
 	if err == nil {
 		return keysFromSecret(secret)
@@ -422,7 +445,12 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 
 	// Machines clean up their own instances; Cluster API waits for all
 	// Machines to be gone before deleting the InfraCluster. Only the load
-	// balancer is ours to remove.
+	// balancers are ours to remove.
+	if requeue, err := r.deleteServiceLoadBalancer(ctx, verdaCluster); err != nil {
+		return ctrl.Result{}, err
+	} else if requeue {
+		return ctrl.Result{RequeueAfter: deletePollInterval}, nil
+	}
 	instance, err := r.findLoadBalancer(ctx, verdaCluster)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -501,6 +529,7 @@ func patchVerdaCluster(ctx context.Context, patchHelper *patch.Helper, verdaClus
 		clusterv1.ReadyCondition,
 		infrav1.ControlPlaneEndpointReadyCondition,
 		infrav1.LoadBalancerReadyCondition,
+		infrav1.ServiceLoadBalancerReadyCondition,
 	}})
 }
 

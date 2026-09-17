@@ -40,6 +40,10 @@ spec:
   controlPlaneEndpoint:
     host: ${CONTROL_PLANE_ENDPOINT_HOST}
     port: ${CONTROL_PLANE_ENDPOINT_PORT:=6443}
+  serviceLoadBalancer:
+    enabled: ${VERDA_SERVICE_LOAD_BALANCER:=false}
+    sshKeyIDs:
+      - ${VERDA_SSH_KEY_ID}
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VerdaMachineTemplate
@@ -264,7 +268,7 @@ data:
               effect: NoSchedule
           containers:
             - name: cloud-controller-manager
-              image: docker.io/hriships/verda-cloud-controller-manager:v0.1.0
+              image: docker.io/hriships/verda-cloud-controller-manager:v0.2.0
               args:
                 - --cloud-provider=verda
                 - --leader-elect=true

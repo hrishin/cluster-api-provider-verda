@@ -98,9 +98,10 @@ func validateClusterSpec(spec *infrav1.VerdaClusterSpec, path *field.Path) field
 		// Defaulted to 6443 by the mutating webhook; reaching here means defaulting was bypassed.
 		errs = append(errs, field.Required(path.Child("controlPlaneEndpoint", "port"), "port is required when host is set"))
 	}
-	lb := spec.ControlPlaneLoadBalancer
-	if lb.Enabled != nil && !*lb.Enabled && (lb.InstanceType != "" || lb.Image != "" || len(lb.SSHKeyIDs) > 0) {
-		errs = append(errs, field.Invalid(path.Child("controlPlaneLoadBalancer", "enabled"), false, "load balancer settings are set but enabled is false"))
+	for name, lb := range map[string]infrav1.ControlPlaneLoadBalancer{"controlPlaneLoadBalancer": spec.ControlPlaneLoadBalancer, "serviceLoadBalancer": spec.ServiceLoadBalancer} {
+		if lb.Enabled != nil && !*lb.Enabled && (lb.InstanceType != "" || lb.Image != "" || len(lb.SSHKeyIDs) > 0) {
+			errs = append(errs, field.Invalid(path.Child(name, "enabled"), false, "load balancer settings are set but enabled is false"))
+		}
 	}
 	return errs
 }

@@ -387,7 +387,7 @@ func (r *machineScope) createInstance(ctx context.Context, cluster *clusterv1.Cl
 			cloud.TagManagedBy: cloud.ManagedByValue,
 			cloud.TagCluster:   cluster.Namespace + "/" + cluster.Name,
 			cloud.TagMachine:   machineTagValue(verdaMachine),
-			"capi-role":        role,
+			cloud.TagRole:      role,
 		},
 	}
 	return r.cloud.CreateInstance(ctx, spec)

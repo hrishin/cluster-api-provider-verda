@@ -41,6 +41,11 @@ spec:
       name: Backends
       priority: 1
       type: string
+    - description: Service load balancer address
+      jsonPath: .status.serviceLoadBalancer.address
+      name: ServiceLB
+      priority: 1
+      type: string
     - description: Time duration since creation of VerdaCluster
       jsonPath: .metadata.creationTimestamp
       name: Age
@@ -148,6 +153,40 @@ spec:
                 maxLength: 64
                 minLength: 1
                 type: string
+              serviceLoadBalancer:
+                description: |-
+                  serviceLoadBalancer configures a provider-managed load balancer for
+                  Services of type LoadBalancer: a Verda instance running envoy whose
+                  listeners are managed by the cloud controller manager in the workload
+                  cluster. TCP and UDP are forwarded as-is (TLS passes through).
+                minProperties: 1
+                properties:
+                  enabled:
+                    description: enabled turns on the provider-managed load balancer.
+                    type: boolean
+                  image:
+                    description: |-
+                      image is the Verda image the load balancer boots from. It must be a
+                      Debian-based image with apt access. Defaults to ubuntu-24.04.
+                    maxLength: 256
+                    type: string
+                  instanceType:
+                    description: instanceType is the Verda instance type of the load
+                      balancer. Defaults to CPU.4V.16G.
+                    maxLength: 64
+                    type: string
+                  sshKeyIDs:
+                    description: |-
+                      sshKeyIDs are additional Verda SSH keys to inject into the load balancer
+                      instance, for troubleshooting. The provider always injects its own key.
+                    items:
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
             required:
             - location
             type: object
@@ -272,8 +311,9 @@ spec:
                     maxLength: 64
                     type: string
                   backends:
-                    description: backends are the control plane addresses currently
-                      configured in haproxy.
+                    description: |-
+                      backends are the control plane addresses currently configured in haproxy.
+                      Unused for the service load balancer, whose listeners live in the workload cluster.
                     items:
                       maxLength: 64
                       type: string
@@ -285,6 +325,46 @@ spec:
                       running haproxy.
                     maxLength: 128
                     type: string
+                  secretPublished:
+                    description: |-
+                      secretPublished is true once the address and SSH keys have been written
+                      to the workload cluster (service load balancer only).
+                    type: boolean
+                  startupScriptID:
+                    description: startupScriptID is the identifier of the load balancer's
+                      startup script.
+                    maxLength: 128
+                    type: string
+                type: object
+              serviceLoadBalancer:
+                description: serviceLoadBalancer holds the state of the provider-managed
+                  service load balancer.
+                minProperties: 1
+                properties:
+                  address:
+                    description: address is the public IP of the load balancer instance.
+                    maxLength: 64
+                    type: string
+                  backends:
+                    description: |-
+                      backends are the control plane addresses currently configured in haproxy.
+                      Unused for the service load balancer, whose listeners live in the workload cluster.
+                    items:
+                      maxLength: 64
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                  instanceID:
+                    description: instanceID is the identifier of the Verda instance
+                      running haproxy.
+                    maxLength: 128
+                    type: string
+                  secretPublished:
+                    description: |-
+                      secretPublished is true once the address and SSH keys have been written
+                      to the workload cluster (service load balancer only).
+                    type: boolean
                   startupScriptID:
                     description: startupScriptID is the identifier of the load balancer's
                       startup script.

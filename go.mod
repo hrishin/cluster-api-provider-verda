@@ -113,6 +113,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.36.3 // indirect
 	k8s.io/apiserver v0.36.3 // indirect
+	k8s.io/cluster-bootstrap v0.36.3 // indirect
 	k8s.io/component-helpers v0.36.3 // indirect
 	k8s.io/controller-manager v0.36.3 // indirect
 	k8s.io/kms v0.36.3 // indirect

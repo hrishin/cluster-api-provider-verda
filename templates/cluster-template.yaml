@@ -10,7 +10,8 @@
 # Optional:
 #   CONTROL_PLANE_MACHINE_COUNT (1), WORKER_MACHINE_COUNT (1),
 #   VERDA_CONTROL_PLANE_INSTANCE_TYPE, VERDA_WORKER_INSTANCE_TYPE,
-#   VERDA_LOAD_BALANCER_INSTANCE_TYPE (CPU.4V.16G), POD_CIDR (192.168.0.0/16)
+#   VERDA_LOAD_BALANCER_INSTANCE_TYPE (CPU.4V.16G), POD_CIDR (192.168.0.0/16),
+#   VERDA_SERVICE_LOAD_BALANCER (false), VERDA_SERVICE_LOAD_BALANCER_INSTANCE_TYPE
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
@@ -39,6 +40,13 @@ spec:
   controlPlaneLoadBalancer:
     enabled: true
     instanceType: ${VERDA_LOAD_BALANCER_INSTANCE_TYPE:=CPU.4V.16G}
+    sshKeyIDs:
+      - ${VERDA_SSH_KEY_ID}
+  # Envoy instance for Services of type LoadBalancer (TCP/UDP pass-through),
+  # driven by the cloud controller manager. Off by default: it is an extra instance.
+  serviceLoadBalancer:
+    enabled: ${VERDA_SERVICE_LOAD_BALANCER:=false}
+    instanceType: ${VERDA_SERVICE_LOAD_BALANCER_INSTANCE_TYPE:=CPU.4V.16G}
     sshKeyIDs:
       - ${VERDA_SSH_KEY_ID}
 ---
@@ -261,7 +269,7 @@ data:
               effect: NoSchedule
           containers:
             - name: cloud-controller-manager
-              image: docker.io/hriships/verda-cloud-controller-manager:v0.1.0
+              image: docker.io/hriships/verda-cloud-controller-manager:v0.2.0
               args:
                 - --cloud-provider=verda
                 - --leader-elect=true

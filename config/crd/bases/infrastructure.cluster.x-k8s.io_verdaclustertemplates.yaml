@@ -162,6 +162,41 @@ spec:
                         maxLength: 64
                         minLength: 1
                         type: string
+                      serviceLoadBalancer:
+                        description: |-
+                          serviceLoadBalancer configures a provider-managed load balancer for
+                          Services of type LoadBalancer: a Verda instance running envoy whose
+                          listeners are managed by the cloud controller manager in the workload
+                          cluster. TCP and UDP are forwarded as-is (TLS passes through).
+                        minProperties: 1
+                        properties:
+                          enabled:
+                            description: enabled turns on the provider-managed load
+                              balancer.
+                            type: boolean
+                          image:
+                            description: |-
+                              image is the Verda image the load balancer boots from. It must be a
+                              Debian-based image with apt access. Defaults to ubuntu-24.04.
+                            maxLength: 256
+                            type: string
+                          instanceType:
+                            description: instanceType is the Verda instance type of
+                              the load balancer. Defaults to CPU.4V.16G.
+                            maxLength: 64
+                            type: string
+                          sshKeyIDs:
+                            description: |-
+                              sshKeyIDs are additional Verda SSH keys to inject into the load balancer
+                              instance, for troubleshooting. The provider always injects its own key.
+                            items:
+                              maxLength: 128
+                              minLength: 1
+                              type: string
+                            maxItems: 16
+                            type: array
+                            x-kubernetes-list-type: set
+                        type: object
                     required:
                     - location
                     type: object

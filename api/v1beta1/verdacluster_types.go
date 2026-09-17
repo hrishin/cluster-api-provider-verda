@@ -39,7 +39,17 @@ const (
 	// LoadBalancerReadyCondition reports whether the provider-managed control
 	// plane load balancer instance is running and its backends are in sync.
 	LoadBalancerReadyCondition = "LoadBalancerReady"
+
+	// ServiceLoadBalancerReadyCondition reports whether the provider-managed
+	// service load balancer instance is running and its address and keys have
+	// been handed to the workload cluster.
+	ServiceLoadBalancerReadyCondition = "ServiceLoadBalancerReady"
 )
+
+// ServiceLoadBalancerSecretName is the Secret in the workload cluster's
+// kube-system namespace through which the cloud controller manager learns the
+// service load balancer's address and SSH keys.
+const ServiceLoadBalancerSecretName = "verda-service-lb"
 
 // Defaults for the provider-managed control plane load balancer.
 const (
@@ -78,6 +88,13 @@ type VerdaClusterSpec struct {
 	// whose backends are kept in sync with the control plane machines.
 	// +optional
 	ControlPlaneLoadBalancer ControlPlaneLoadBalancer `json:"controlPlaneLoadBalancer,omitempty,omitzero"`
+
+	// serviceLoadBalancer configures a provider-managed load balancer for
+	// Services of type LoadBalancer: a Verda instance running envoy whose
+	// listeners are managed by the cloud controller manager in the workload
+	// cluster. TCP and UDP are forwarded as-is (TLS passes through).
+	// +optional
+	ServiceLoadBalancer ControlPlaneLoadBalancer `json:"serviceLoadBalancer,omitempty,omitzero"`
 }
 
 // IdentityReference points at a Secret holding Verda API credentials.
@@ -136,6 +153,10 @@ type VerdaClusterStatus struct {
 	// +optional
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty,omitzero"`
 
+	// serviceLoadBalancer holds the state of the provider-managed service load balancer.
+	// +optional
+	ServiceLoadBalancer LoadBalancerStatus `json:"serviceLoadBalancer,omitempty,omitzero"`
+
 	// failureDomains is a list of failure domain objects synced from the infrastructure provider.
 	// A VerdaCluster lives in a single location, which is its only failure domain.
 	// +optional
@@ -165,11 +186,17 @@ type LoadBalancerStatus struct {
 	Address string `json:"address,omitempty"`
 
 	// backends are the control plane addresses currently configured in haproxy.
+	// Unused for the service load balancer, whose listeners live in the workload cluster.
 	// +optional
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:MaxLength=64
 	Backends []string `json:"backends,omitempty"`
+
+	// secretPublished is true once the address and SSH keys have been written
+	// to the workload cluster (service load balancer only).
+	// +optional
+	SecretPublished *bool `json:"secretPublished,omitempty"`
 }
 
 // VerdaClusterInitializationStatus provides observations of the VerdaCluster initialization process.
@@ -190,6 +217,7 @@ type VerdaClusterInitializationStatus struct {
 // +kubebuilder:printcolumn:name="Endpoint",type="string",JSONPath=".spec.controlPlaneEndpoint.host",description="API endpoint"
 // +kubebuilder:printcolumn:name="LB",type="string",JSONPath=".status.loadBalancer.instanceID",description="Load balancer instance",priority=1
 // +kubebuilder:printcolumn:name="Backends",type="string",JSONPath=".status.loadBalancer.backends",description="Load balancer backends",priority=1
+// +kubebuilder:printcolumn:name="ServiceLB",type="string",JSONPath=".status.serviceLoadBalancer.address",description="Service load balancer address",priority=1
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of VerdaCluster"
 
 // VerdaCluster is the Schema for the verdaclusters API.
@@ -218,9 +246,14 @@ func (c *VerdaCluster) IdentitySecretName() string {
 	return c.Spec.IdentityRef.Name
 }
 
-// LoadBalancerEnabled reports whether the provider-managed load balancer is requested.
+// LoadBalancerEnabled reports whether the provider-managed control plane load balancer is requested.
 func (c *VerdaCluster) LoadBalancerEnabled() bool {
 	return c.Spec.ControlPlaneLoadBalancer.Enabled != nil && *c.Spec.ControlPlaneLoadBalancer.Enabled
+}
+
+// ServiceLoadBalancerEnabled reports whether the provider-managed service load balancer is requested.
+func (c *VerdaCluster) ServiceLoadBalancerEnabled() bool {
+	return c.Spec.ServiceLoadBalancer.Enabled != nil && *c.Spec.ServiceLoadBalancer.Enabled
 }
 
 // GetConditions returns the set of conditions for this object.

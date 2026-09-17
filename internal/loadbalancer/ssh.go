@@ -19,7 +19,9 @@ package loadbalancer
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -27,11 +29,20 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Updater pushes a backend list to a running load balancer.
+// File is a configuration file to install on a load balancer.
+type File struct {
+	Path    string
+	Content string
+}
+
+// Updater pushes configuration to a running load balancer.
 type Updater interface {
 	// UpdateBackends installs the haproxy configuration for backends on the
-	// load balancer at addr, authenticating with keys.
+	// control plane load balancer at addr, authenticating with keys.
 	UpdateBackends(ctx context.Context, addr string, keys *Keys, backends []string) error
+	// UpdateFiles atomically installs files on the load balancer at addr and
+	// runs reload afterwards (may be empty).
+	UpdateFiles(ctx context.Context, addr string, keys *Keys, files []File, reload string) error
 }
 
 // SSHUpdater implements Updater over SSH as root.
@@ -42,6 +53,44 @@ type SSHUpdater struct {
 var _ Updater = &SSHUpdater{}
 
 func (u *SSHUpdater) UpdateBackends(ctx context.Context, addr string, keys *Keys, backends []string) error {
+	return u.run(ctx, addr, keys, strings.NewReader(Config(backends)), UpdateCommand)
+}
+
+// UpdateFiles implements Updater. Each file is written next to its
+// destination and moved into place so watchers (envoy) see one atomic change.
+func (u *SSHUpdater) UpdateFiles(ctx context.Context, addr string, keys *Keys, files []File, reload string) error {
+	return u.run(ctx, addr, keys, strings.NewReader(InstallScript(files, reload)), "bash -s")
+}
+
+// InstallScript renders the shell that installs files atomically and reloads.
+func InstallScript(files []File, reload string) string {
+	var b strings.Builder
+	b.WriteString("set -euo pipefail\n")
+	for i, f := range files {
+		fmt.Fprintf(&b, "base64 -d > %s.new.%d <<'__CAPI_FILE__'\n%s__CAPI_FILE__\n", f.Path, i, wrapBase64(base64.StdEncoding.EncodeToString([]byte(f.Content))))
+		fmt.Fprintf(&b, "mv -f %s.new.%d %s\n", f.Path, i, f.Path)
+	}
+	if reload != "" {
+		b.WriteString(reload + "\n")
+	}
+	return b.String()
+}
+
+// wrapBase64 splits a base64 string into 76-column lines.
+func wrapBase64(s string) string {
+	const width = 76
+	var b strings.Builder
+	for len(s) > width {
+		b.WriteString(s[:width])
+		b.WriteByte('\n')
+		s = s[width:]
+	}
+	b.WriteString(s)
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func (u *SSHUpdater) run(ctx context.Context, addr string, keys *Keys, stdin io.Reader, command string) error {
 	signer, err := ssh.ParsePrivateKey(keys.ClientPrivateKey)
 	if err != nil {
 		return fmt.Errorf("parsing client key: %w", err)
@@ -85,10 +134,10 @@ func (u *SSHUpdater) UpdateBackends(ctx context.Context, addr string, keys *Keys
 	defer func() { _ = session.Close() }()
 
 	var stderr bytes.Buffer
-	session.Stdin = strings.NewReader(Config(backends))
+	session.Stdin = stdin
 	session.Stderr = &stderr
-	if err := session.Run(UpdateCommand); err != nil {
-		return fmt.Errorf("updating haproxy backends on %s: %w: %s", addr, err, strings.TrimSpace(stderr.String()))
+	if err := session.Run(command); err != nil {
+		return fmt.Errorf("updating load balancer %s: %w: %s", addr, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -97,10 +146,24 @@ func (u *SSHUpdater) UpdateBackends(ctx context.Context, addr string, keys *Keys
 type FakeUpdater struct {
 	// Backends is the last backend list pushed per address.
 	Backends map[string][]string
-	// Calls counts UpdateBackends invocations.
+	// Files is the last file set pushed per address.
+	Files map[string][]File
+	// Calls counts UpdateBackends and UpdateFiles invocations.
 	Calls int
-	// Err, when set, is returned by UpdateBackends.
+	// Err, when set, is returned by UpdateBackends and UpdateFiles.
 	Err error
+}
+
+func (f *FakeUpdater) UpdateFiles(_ context.Context, addr string, _ *Keys, files []File, _ string) error {
+	f.Calls++
+	if f.Err != nil {
+		return f.Err
+	}
+	if f.Files == nil {
+		f.Files = map[string][]File{}
+	}
+	f.Files[addr] = append([]File(nil), files...)
+	return nil
 }
 
 var _ Updater = &FakeUpdater{}

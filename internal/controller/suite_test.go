@@ -109,7 +109,9 @@ var _ = BeforeSuite(func() {
 
 	fakeCloud = cloud.NewFake()
 	fakeLB = &loadbalancer.FakeUpdater{}
-	Expect((&VerdaClusterReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}, LoadBalancer: fakeLB}).
+	// Workload clusters are stood in for by this envtest itself.
+	workloadClient := func([]byte) (client.Client, error) { return k8sClient, nil }
+	Expect((&VerdaClusterReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}, LoadBalancer: fakeLB, WorkloadClient: workloadClient}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
 	Expect((&VerdaMachineReconciler{Client: mgr.GetClient(), CloudFactory: cloud.StaticFactory{Client: fakeCloud}}).
 		SetupWithManager(ctx, mgr, crcontroller.Options{})).To(Succeed())
