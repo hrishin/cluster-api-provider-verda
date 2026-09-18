@@ -10,8 +10,8 @@ export VERDA_CLIENT_SECRET=...
 export VERDA_LOCATION=FIN-03
 export VERDA_SSH_KEY_ID=<verda ssh key id>
 # Optional: the templates default to the current images built by packer/
-# (VERDA_OS_VOLUME_ID=k8s-node-v1.35.8-ubuntu-24.04-20260917-f47f10a,
-#  VERDA_GPU_OS_VOLUME_ID=k8s-gpu-node-v1.35.8-cuda12-8-20260917-f47f10a); override with an ID or exact name.
+# (VERDA_OS_VOLUME_ID=k8s-node-v1.35.8-ubuntu-24.04-20260918-4f351ac,
+#  VERDA_GPU_OS_VOLUME_ID=k8s-gpu-node-v1.35.8-cuda12-8-20260918-4f351ac); override with an ID or exact name.
 export KUBERNETES_VERSION=v1.35.8
 ```
 

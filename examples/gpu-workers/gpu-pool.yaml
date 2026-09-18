@@ -6,7 +6,7 @@ spec:
   template:
     spec:
       instanceType: 1RTXPRO6000.30V
-      osVolumeID: ${VERDA_GPU_OS_VOLUME_ID:=k8s-gpu-node-v1.35.8-cuda12-8-20260917-f47f10a}
+      osVolumeID: ${VERDA_GPU_OS_VOLUME_ID:=k8s-gpu-node-v1.35.8-cuda12-8-20260918-4f351ac}
       sshKeyIDs:
         - ${VERDA_SSH_KEY_ID}
       spot: true
