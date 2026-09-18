@@ -6,6 +6,6 @@ spec:
   template:
     spec:
       instanceType: CPU.4V.16G
-      image: ubuntu-24.04
+      image: 24.04.base
       sshKeyIDs:
         - 00000000-0000-0000-0000-000000000000

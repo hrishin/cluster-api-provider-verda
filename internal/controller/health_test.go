@@ -60,7 +60,7 @@ func provisionedMachine(nsPrefix string) (*infrav1.VerdaMachine, string) {
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 	vm := &infrav1.VerdaMachine{
 		ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: ns.Name, Labels: map[string]string{clusterv1.ClusterNameLabel: "test"}},
-		Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+		Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "24.04.base"},
 	}
 	Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 	machine := &clusterv1.Machine{
@@ -137,7 +137,7 @@ var _ = Describe("VerdaMachine health", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		vm := &infrav1.VerdaMachine{
 			ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: ns.Name, Labels: map[string]string{clusterv1.ClusterNameLabel: "test"}},
-			Spec:       infrav1.VerdaMachineSpec{InstanceType: "1H100.80S.30V", Image: "ubuntu-24.04"},
+			Spec:       infrav1.VerdaMachineSpec{InstanceType: "1H100.80S.30V", Image: "24.04.base"},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		machine := &clusterv1.Machine{
@@ -201,7 +201,7 @@ var _ = Describe("VerdaMachine hostname collisions", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		vm := &infrav1.VerdaMachine{
 			ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: ns.Name, Labels: map[string]string{clusterv1.ClusterNameLabel: "test"}},
-			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "24.04.base"},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		machine := &clusterv1.Machine{
@@ -237,7 +237,7 @@ var _ = Describe("Orphaned objects", func() {
 		Expect(k8sClient.Create(ctx, vc)).To(Succeed())
 		vm := &infrav1.VerdaMachine{
 			ObjectMeta: metav1.ObjectMeta{Name: "orphan", Namespace: ns.Name},
-			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "24.04.base"},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 

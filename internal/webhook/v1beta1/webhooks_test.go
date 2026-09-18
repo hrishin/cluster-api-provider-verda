@@ -39,7 +39,7 @@ var _ = Describe("VerdaMachine webhook", func() {
 
 		Expect(k8sClient.Create(ctx, vm)).To(MatchError(ContainSubstring("image or osVolumeID")))
 
-		vm.Spec.Image = "ubuntu-24.04"
+		vm.Spec.Image = "24.04.base"
 		vm.Spec.OSVolumeID = "vol"
 		Expect(k8sClient.Create(ctx, vm)).To(MatchError(ContainSubstring("image or osVolumeID")))
 
@@ -66,18 +66,18 @@ var _ = Describe("VerdaMachineTemplate webhook", func() {
 		tpl := &infrav1.VerdaMachineTemplate{
 			ObjectMeta: metav1.ObjectMeta{GenerateName: "vmt-", Namespace: "default"},
 			Spec: infrav1.VerdaMachineTemplateSpec{Template: infrav1.VerdaMachineTemplateResource{
-				Spec: infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
+				Spec: infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "24.04.base"},
 			}},
 		}
 		Expect(k8sClient.Create(ctx, tpl)).To(Succeed())
 
-		tpl.Spec.Template.Spec.Image = "ubuntu-22.04"
+		tpl.Spec.Template.Spec.Image = "26.04.base"
 		Expect(k8sClient.Update(ctx, tpl)).To(MatchError(ContainSubstring("spec is immutable")))
 
 		By("allowing a dry-run update from the topology controller")
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(tpl), tpl)).To(Succeed())
 		tpl.Annotations = map[string]string{clusterv1.TopologyDryRunAnnotation: ""}
-		tpl.Spec.Template.Spec.Image = "ubuntu-22.04"
+		tpl.Spec.Template.Spec.Image = "26.04.base"
 		Expect(k8sClient.Update(ctx, tpl, client.DryRunAll)).To(Succeed())
 
 		By("still rejecting a real update carrying the annotation")

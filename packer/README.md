@@ -3,7 +3,7 @@
 Two images, built in two stages, each a Verda OS volume:
 
 1. **`k8s-node-*`** — a Kubernetes 1.35 node (containerd, runc,
-   kubelet/kubeadm/kubectl, CNI plugins, crictl) built from stock `ubuntu-24.04`
+   kubelet/kubeadm/kubectl, CNI plugins, crictl) built from stock `24.04.base` (Ubuntu 24.04)
    with `ansible/verda-node.yml` (kubernetes-sigs/image-builder's node roles).
 2. **`k8s-gpu-node-*`** — a clone of the node image plus the NVIDIA open kernel
    modules and driver, the CUDA toolkit and the NVIDIA container toolkit

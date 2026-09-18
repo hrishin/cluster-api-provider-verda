@@ -22,9 +22,11 @@ packer {
 }
 
 locals {
-  build_id          = var.build_id != "" ? var.build_id : formatdate("YYYYMMDD-hhmm", timestamp())
-  flavor            = var.gpu ? "gpu-node" : "node"
-  default_name      = var.gpu ? "k8s-gpu-node-v${var.kubernetes_version}-cuda${var.cuda_version}-${local.build_id}" : "k8s-node-v${var.kubernetes_version}-${var.source_image}-${local.build_id}"
+  build_id = var.build_id != "" ? var.build_id : formatdate("YYYYMMDD-hhmm", timestamp())
+  flavor   = var.gpu ? "gpu-node" : "node"
+  # Volume names spell the source out ("ubuntu-24.04") rather than Verda's image_type ("24.04.base").
+  source_label      = lookup({ "24.04.base" = "ubuntu-24.04", "26.04.base" = "ubuntu-26.04" }, var.source_image, replace(var.source_image, ".", "-"))
+  default_name      = var.gpu ? "k8s-gpu-node-v${var.kubernetes_version}-cuda${var.cuda_version}-${local.build_id}" : "k8s-node-v${var.kubernetes_version}-${local.source_label}-${local.build_id}"
   image_name        = var.image_name != "" ? var.image_name : local.default_name
   kubernetes_series = "v${join(".", slice(split(".", var.kubernetes_version), 0, 2))}"
 

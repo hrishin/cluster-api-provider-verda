@@ -53,7 +53,7 @@ variable "instance_type" {
 variable "source_image" {
   description = "Verda image_type to start from (stage 1), or for the GPU stage the ID of a fresh clone of the node image (build.sh build-gpu makes it)."
   type        = string
-  default     = "ubuntu-24.04"
+  default     = "24.04.base"
 }
 
 variable "gpu_instance_type" {

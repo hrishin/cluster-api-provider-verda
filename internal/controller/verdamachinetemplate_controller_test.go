@@ -35,7 +35,7 @@ var _ = Describe("VerdaMachineTemplate capacity", func() {
 		tpl := &infrav1.VerdaMachineTemplate{
 			ObjectMeta: metav1.ObjectMeta{GenerateName: "gpu-", Namespace: "default"},
 			Spec: infrav1.VerdaMachineTemplateSpec{Template: infrav1.VerdaMachineTemplateResource{
-				Spec: infrav1.VerdaMachineSpec{InstanceType: "1H100.80S.30V", Image: "ubuntu-24.04"},
+				Spec: infrav1.VerdaMachineSpec{InstanceType: "1H100.80S.30V", Image: "24.04.base"},
 			}},
 		}
 		Expect(k8sClient.Create(ctx, tpl)).To(Succeed())
@@ -53,7 +53,7 @@ var _ = Describe("VerdaMachineTemplate capacity", func() {
 		unknown := &infrav1.VerdaMachineTemplate{
 			ObjectMeta: metav1.ObjectMeta{GenerateName: "unknown-", Namespace: "default"},
 			Spec: infrav1.VerdaMachineTemplateSpec{Template: infrav1.VerdaMachineTemplateResource{
-				Spec: infrav1.VerdaMachineSpec{InstanceType: "NOPE.1", Image: "ubuntu-24.04"},
+				Spec: infrav1.VerdaMachineSpec{InstanceType: "NOPE.1", Image: "24.04.base"},
 			}},
 		}
 		Expect(k8sClient.Create(ctx, unknown)).To(Succeed())

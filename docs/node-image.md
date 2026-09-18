@@ -79,7 +79,7 @@ PACKER_VAR_FILES=verda.json make build-qemu-ubuntu-2404
 Then create a Verda OS volume from the result. The Verda API has no image
 import endpoint today, so the practical route is:
 
-1. Create a throwaway instance from the stock `ubuntu-24.04` image with an
+1. Create a throwaway instance from the stock `24.04.base` (Ubuntu 24.04) image with an
    OS volume of the desired size.
 2. Write the built image onto that instance's root disk from a rescue
    environment, or — simpler — run the image-builder Ansible roles against
@@ -99,7 +99,7 @@ volumes, so keep one per Kubernetes minor you run.
 
 ## Stock images
 
-`templates/cluster-template-stock-image.yaml` boots `ubuntu-24.04` and
+`templates/cluster-template-stock-image.yaml` boots `24.04.base` (stock Ubuntu 24.04) and
 installs containerd and the Kubernetes packages from `pkgs.k8s.io` in
 `preKubeadmCommands`. It works without any image preparation but adds a few
 minutes and an apt dependency to every node boot.

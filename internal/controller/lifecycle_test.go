@@ -135,7 +135,7 @@ var _ = Describe("VerdaCluster and VerdaMachine lifecycle", func() {
 				},
 				Spec: infrav1.VerdaMachineSpec{
 					InstanceType: "CPU.4V.16G",
-					Image:        "ubuntu-24.04",
+					Image:        "24.04.base",
 					SSHKeyIDs:    []string{"key-1"},
 				},
 			}

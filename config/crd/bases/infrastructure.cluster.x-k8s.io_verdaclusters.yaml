@@ -111,7 +111,7 @@ spec:
                   image:
                     description: |-
                       image is the Verda image the load balancer boots from. It must be a
-                      Debian-based image with apt access. Defaults to ubuntu-24.04.
+                      Debian-based image with apt access. Defaults to 24.04.base (Ubuntu 24.04).
                     maxLength: 256
                     type: string
                   instanceType:
@@ -167,7 +167,7 @@ spec:
                   image:
                     description: |-
                       image is the Verda image the load balancer boots from. It must be a
-                      Debian-based image with apt access. Defaults to ubuntu-24.04.
+                      Debian-based image with apt access. Defaults to 24.04.base (Ubuntu 24.04).
                     maxLength: 256
                     type: string
                   instanceType:

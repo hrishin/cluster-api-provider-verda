@@ -71,7 +71,7 @@ type VerdaMachineSpec struct {
 	// +kubebuilder:validation:MaxLength=64
 	InstanceType string `json:"instanceType"`
 
-	// image is the Verda image to boot the instance from, e.g. ubuntu-24.04-cuda-12.8-open-docker.
+	// image is the Verda image type to boot the instance from, e.g. 24.04.base or 24.04.cuda13.2.docker (GET /v1/images lists them).
 	// kubeadm, kubelet and containerd must be installed by the bootstrap data unless
 	// already present in the image. Exactly one of image and osVolumeID must be set.
 	// +optional

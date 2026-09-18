@@ -56,7 +56,7 @@ const ServiceLoadBalancerSecretName = "verda-service-lb"
 // Defaults for the provider-managed control plane load balancer.
 const (
 	DefaultLoadBalancerInstanceType = "CPU.4V.16G"
-	DefaultLoadBalancerImage        = "ubuntu-24.04"
+	DefaultLoadBalancerImage        = "24.04.base"
 )
 
 // VerdaClusterSpec defines the desired state of VerdaCluster.
@@ -121,7 +121,7 @@ type ControlPlaneLoadBalancer struct {
 	InstanceType string `json:"instanceType,omitempty"`
 
 	// image is the Verda image the load balancer boots from. It must be a
-	// Debian-based image with apt access. Defaults to ubuntu-24.04.
+	// Debian-based image with apt access. Defaults to 24.04.base (Ubuntu 24.04).
 	// +optional
 	// +kubebuilder:validation:MaxLength=256
 	Image string `json:"image,omitempty"`
