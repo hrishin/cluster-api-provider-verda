@@ -1,7 +1,7 @@
 name: Charts
 
 # Lints the Helm charts on every change and publishes them as OCI artifacts
-# to Docker Hub on release tags (chart version = tag without the leading v).
+# to Docker Hub on release tags (Chart.yaml version must equal the tag without the leading v).
 on:
   push:
     branches: [main]
@@ -67,10 +67,14 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          VERSION="${TAG#v}"
+          # Chart.yaml is the source of truth (hack/bump-version.sh); the tag must agree.
+          for chart in charts/*; do
+            have="$(sed -n 's/^version: //p' "$chart/Chart.yaml")"
+            [ "$have" = "${TAG#v}" ] || { echo "$chart/Chart.yaml has version $have, tag is $TAG: run hack/bump-version.sh $TAG before tagging" >&2; exit 1; }
+          done
           mkdir -p out/charts
           for chart in charts/*; do
-            helm package "$chart" --version "$VERSION" --app-version "$TAG" --destination out/charts
+            helm package "$chart" --destination out/charts
           done
           for pkg in out/charts/*.tgz; do
             helm push "$pkg" "oci://$REGISTRY/$OCI_REPO"

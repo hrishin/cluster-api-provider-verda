@@ -11,7 +11,7 @@
 #   VERDA_CONTROL_PLANE_INSTANCE_TYPE, VERDA_WORKER_INSTANCE_TYPE,
 #   VERDA_LOAD_BALANCER_INSTANCE_TYPE (CPU.4V.16G), POD_CIDR (192.168.0.0/16),
 #   VERDA_SERVICE_LOAD_BALANCER (false), VERDA_SERVICE_LOAD_BALANCER_INSTANCE_TYPE,
-#   VERDA_OS_VOLUME_ID (ID or exact name of the node image; default k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e)
+#   VERDA_OS_VOLUME_ID (ID or exact name of the node image; default k8s-node-v1.35.8-ubuntu-24.04-20260917-f47f10a)
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
@@ -58,7 +58,7 @@ spec:
   template:
     spec:
       instanceType: ${VERDA_CONTROL_PLANE_INSTANCE_TYPE:=CPU.4V.16G}
-      osVolumeID: ${VERDA_OS_VOLUME_ID:=k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e}
+      osVolumeID: ${VERDA_OS_VOLUME_ID:=k8s-node-v1.35.8-ubuntu-24.04-20260917-f47f10a}
       sshKeyIDs:
         - ${VERDA_SSH_KEY_ID}
 ---
@@ -99,7 +99,7 @@ spec:
   template:
     spec:
       instanceType: ${VERDA_WORKER_INSTANCE_TYPE:=CPU.4V.16G}
-      osVolumeID: ${VERDA_OS_VOLUME_ID:=k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e}
+      osVolumeID: ${VERDA_OS_VOLUME_ID:=k8s-node-v1.35.8-ubuntu-24.04-20260917-f47f10a}
       sshKeyIDs:
         - ${VERDA_SSH_KEY_ID}
 ---
@@ -269,7 +269,7 @@ data:
               effect: NoSchedule
           containers:
             - name: cloud-controller-manager
-              image: docker.io/hriships/verda-cloud-controller-manager:v0.2.0
+              image: docker.io/hriships/verda-cloud-controller-manager:v0.4.0
               args:
                 - --cloud-provider=verda
                 - --leader-elect=true

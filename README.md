@@ -123,7 +123,10 @@ Optional values: `metrics.enabled` + `metrics.serviceMonitor.enabled` for Promet
 ### Install with clusterctl
 
 Releases publish `infrastructure-components.yaml`, `metadata.yaml` and the
-cluster templates, and images to `docker.io/hriships`. Register the provider
+cluster templates, and images to `docker.io/hriships`. To cut one, run
+`hack/bump-version.sh vX.Y.Z` (sets the charts' `version`/`appVersion` and
+the cloud controller manager image tag), commit, then push the `vX.Y.Z` tag;
+the workflows refuse a tag that disagrees with `Chart.yaml`. Register the provider
 in `~/.config/cluster-api/clusterctl.yaml`:
 
 ```yaml
@@ -152,7 +155,7 @@ make run &
 export CLUSTER_NAME=demo KUBERNETES_VERSION=v1.35.8
 export CONTROL_PLANE_ENDPOINT_HOST=demo.example.com   # DNS name you control
 export VERDA_LOCATION=FIN-03 VERDA_SSH_KEY_ID=<ssh key id>
-# VERDA_OS_VOLUME_ID defaults to the current packer/ node image (k8s-node-v1.35.8-ubuntu-24.04-20260917-5a5059e)
+# VERDA_OS_VOLUME_ID defaults to the current packer/ node image (k8s-node-v1.35.8-ubuntu-24.04-20260917-f47f10a)
 clusterctl generate cluster $CLUSTER_NAME --from templates/cluster-template.yaml | kubectl apply -f -
 ```
 

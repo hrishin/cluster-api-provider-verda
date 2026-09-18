@@ -93,8 +93,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           make release-manifests IMG="${REGISTRY}/${IMAGE_REPO}/cluster-api-provider-verda:${TAG}"
+          # Chart.yaml is the source of truth (hack/bump-version.sh); the tag must agree.
           for chart in charts/*; do
-            helm package "$chart" --version "${TAG#v}" --app-version "${TAG}" --destination out
+            have="$(sed -n 's/^version: //p' "$chart/Chart.yaml")"
+            [ "$have" = "${TAG#v}" ] || { echo "$chart/Chart.yaml has version $have, tag is $TAG: run hack/bump-version.sh $TAG before tagging" >&2; exit 1; }
+          done
+          for chart in charts/*; do
+            helm package "$chart" --destination out
           done
           # The cloud controller manager image referenced by the templates follows the release tag.
           sed -i "s#${REGISTRY}/${IMAGE_REPO}/verda-cloud-controller-manager:v[0-9.]*#${REGISTRY}/${IMAGE_REPO}/verda-cloud-controller-manager:${TAG}#g" out/cluster-template*.yaml

@@ -2,8 +2,8 @@ apiVersion: v2
 name: cluster-api-provider-verda-crds
 description: CustomResourceDefinitions of the Cluster API infrastructure provider for Verda Cloud, for installations that manage CRDs separately from the controller.
 type: application
-version: 0.0.0
-appVersion: 0.0.0
+version: 0.4.0
+appVersion: v0.4.0
 kubeVersion: ">=1.28.0-0"
 home: https://github.com/hrishin/cluster-api-provider-verda
 sources:
