@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// VerdaMachineTemplate: the VerdaMachine template for MachineDeployments and KubeadmControlPlane, with autoscaler capacity in status.
+
 package v1beta1
 
 import (
@@ -83,12 +85,10 @@ type NodeInfo struct {
 // Verda instance type catalog.
 const CapacityReadyCondition = "CapacityReady"
 
-// GetConditions returns the set of conditions for this object.
 func (t *VerdaMachineTemplate) GetConditions() []metav1.Condition {
 	return t.Status.Conditions
 }
 
-// SetConditions sets the conditions on this object.
 func (t *VerdaMachineTemplate) SetConditions(conditions []metav1.Condition) {
 	t.Status.Conditions = conditions
 }

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// cloudprovider.LoadBalancer for Verda: renders envoy listeners on the service load balancer instance for every Service of type LoadBalancer.
+
 package ccm
 
 import (
@@ -34,34 +36,21 @@ import (
 	"github.com/hrishin/verda-capi/internal/loadbalancer"
 )
 
-// Annotations understood on Services of type LoadBalancer.
 const (
-	// AnnotationProxyProtocol sends PROXY protocol v2 to the backends so the
-	// application (for example ingress-nginx with use-proxy-protocol) sees the
-	// client address. TCP ports only.
 	AnnotationProxyProtocol = "verda.cluster.x-k8s.io/proxy-protocol"
 )
 
-// serviceLBSecretName is the Secret the management cluster publishes into
-// kube-system with the service load balancer's address and SSH keys.
 const serviceLBSecretName = "verda-service-lb"
 
-// excludeFromLBLabel is the standard label that keeps a node (e.g. control
-// plane) out of external load balancers.
 const excludeFromLBLabel = "node.kubernetes.io/exclude-from-external-load-balancers"
 
-// serviceLB implements cloudprovider.LoadBalancer on the provider-managed
-// envoy instance. Every change re-renders the full listener set from all
-// LoadBalancer Services in the cluster, so the instance always reflects the
-// API server rather than an in-memory history.
 type serviceLB struct {
 	kube    kubernetes.Interface
 	updater loadbalancer.Updater
-	// readSecret and listServices/listNodes are indirections for tests.
+
 	mu sync.Mutex
 }
 
-// LoadBalancer implements cloudprovider.Interface.
 func (p *Provider) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 	if p.kube == nil {
 		return nil, false
@@ -69,12 +58,10 @@ func (p *Provider) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 	return p.lb, true
 }
 
-// GetLoadBalancerName implements cloudprovider.LoadBalancer.
 func (l *serviceLB) GetLoadBalancerName(_ context.Context, _ string, service *corev1.Service) string {
 	return service.Namespace + "_" + service.Name
 }
 
-// GetLoadBalancer implements cloudprovider.LoadBalancer.
 func (l *serviceLB) GetLoadBalancer(ctx context.Context, _ string, service *corev1.Service) (*corev1.LoadBalancerStatus, bool, error) {
 	lb, err := l.config(ctx)
 	if err != nil {
@@ -89,7 +76,6 @@ func (l *serviceLB) GetLoadBalancer(ctx context.Context, _ string, service *core
 	return status(lb.address), true, nil
 }
 
-// EnsureLoadBalancer implements cloudprovider.LoadBalancer.
 func (l *serviceLB) EnsureLoadBalancer(ctx context.Context, _ string, service *corev1.Service, _ []*corev1.Node) (*corev1.LoadBalancerStatus, error) {
 	lb, err := l.config(ctx)
 	if err != nil {
@@ -101,7 +87,6 @@ func (l *serviceLB) EnsureLoadBalancer(ctx context.Context, _ string, service *c
 	return status(lb.address), nil
 }
 
-// UpdateLoadBalancer implements cloudprovider.LoadBalancer (node set changed).
 func (l *serviceLB) UpdateLoadBalancer(ctx context.Context, _ string, service *corev1.Service, _ []*corev1.Node) error {
 	lb, err := l.config(ctx)
 	if err != nil {
@@ -110,19 +95,17 @@ func (l *serviceLB) UpdateLoadBalancer(ctx context.Context, _ string, service *c
 	return l.sync(ctx, lb, service)
 }
 
-// EnsureLoadBalancerDeleted implements cloudprovider.LoadBalancer.
 func (l *serviceLB) EnsureLoadBalancerDeleted(ctx context.Context, _ string, service *corev1.Service) error {
 	lb, err := l.config(ctx)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil // never had a load balancer
+			return nil
 		}
 		return err
 	}
 	return l.sync(ctx, lb, nil, service)
 }
 
-// lbConfig is what the management cluster published.
 type lbConfig struct {
 	address string
 	keys    *loadbalancer.Keys
@@ -147,9 +130,6 @@ func (l *serviceLB) config(ctx context.Context) (*lbConfig, error) {
 	}, nil
 }
 
-// sync re-renders every LoadBalancer Service (with current taking precedence
-// over its stored copy and any deleting Services excluded) and pushes the
-// result. Only one push runs at a time.
 func (l *serviceLB) sync(ctx context.Context, lb *lbConfig, current *corev1.Service, deleting ...*corev1.Service) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -199,12 +179,6 @@ func (l *serviceLB) sync(ctx context.Context, lb *lbConfig, current *corev1.Serv
 	return nil
 }
 
-// backendNodes returns the addresses of the nodes eligible as backends. This
-// mirrors the service controller's own node set (StableLoadBalancerNodeSet):
-// nodes are excluded only by the exclusion label or deletion, never by
-// readiness. The service controller does not call back when a node becomes
-// Ready, so filtering on readiness here would leave the load balancer stale;
-// envoy's active health checks keep traffic off nodes that are not serving.
 func (l *serviceLB) backendNodes(ctx context.Context) ([]string, error) {
 	nodes, err := l.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -227,9 +201,6 @@ func (l *serviceLB) backendNodes(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// Frontends converts Services into envoy frontends on nodes. Services that
-// cannot be exposed (port already taken by an older Service) are returned in
-// conflicts keyed by namespace/name.
 func Frontends(services []*corev1.Service, nodes []string) ([]loadbalancer.Frontend, map[string]string) {
 	sorted := slices.Clone(services)
 	slices.SortFunc(sorted, func(a, b *corev1.Service) int {
@@ -240,7 +211,7 @@ func Frontends(services []*corev1.Service, nodes []string) ([]loadbalancer.Front
 	})
 
 	conflicts := map[string]string{}
-	taken := map[string]string{} // "80/TCP" -> owner
+	taken := map[string]string{}
 	var frontends []loadbalancer.Frontend
 	for _, svc := range sorted {
 		key := svc.Namespace + "/" + svc.Name
@@ -304,7 +275,6 @@ func status(address string) *corev1.LoadBalancerStatus {
 	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: address}}}
 }
 
-// nodeAddress prefers the internal IP (on Verda identical to the public one).
 func nodeAddress(node *corev1.Node) string {
 	for _, t := range []corev1.NodeAddressType{corev1.NodeInternalIP, corev1.NodeExternalIP} {
 		for _, a := range node.Status.Addresses {

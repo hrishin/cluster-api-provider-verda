@@ -1,0 +1,16 @@
+# Managed by cluster-api-provider-verda. Do not edit.
+node:
+  id: service-lb
+  cluster: service-lb
+admin:
+  address:
+    socket_address: {address: 127.0.0.1, port_value: 9901}
+dynamic_resources:
+  lds_config:
+    path_config_source:
+      path: {{ .LDSPath }}
+      watched_directory: {path: {{ .Dir }}}
+  cds_config:
+    path_config_source:
+      path: {{ .CDSPath }}
+      watched_directory: {path: {{ .Dir }}}

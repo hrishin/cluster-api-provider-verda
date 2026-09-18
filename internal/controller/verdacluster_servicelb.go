@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// The envoy service load balancer part of the VerdaCluster reconciler.
+
 package controller
 
 import (
@@ -38,11 +40,8 @@ import (
 	"github.com/hrishin/verda-capi/internal/loadbalancer"
 )
 
-// WorkloadClientFunc builds a client for a workload cluster from its
-// kubeconfig bytes. Overridable in tests.
 type WorkloadClientFunc func(kubeconfigBytes []byte) (client.Client, error)
 
-// DefaultWorkloadClient builds a controller-runtime client from kubeconfig bytes.
 func DefaultWorkloadClient(kubeconfigBytes []byte) (client.Client, error) {
 	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
 	if err != nil {
@@ -52,10 +51,6 @@ func DefaultWorkloadClient(kubeconfigBytes []byte) (client.Client, error) {
 	return client.New(restConfig, client.Options{})
 }
 
-// reconcileServiceLoadBalancer ensures the envoy instance for Services of
-// type LoadBalancer exists and that the workload cluster knows how to reach
-// it. It never blocks cluster provisioning: the control plane does not
-// depend on it.
 func (r *clusterScope) reconcileServiceLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (requeue bool, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -108,8 +103,6 @@ func (r *clusterScope) reconcileServiceLoadBalancer(ctx context.Context, cluster
 	}
 	status.Address = instance.IP
 
-	// Hand address and keys to the cloud controller manager in the workload
-	// cluster. The API server may not be up yet; retry quietly.
 	if err := r.publishServiceLoadBalancerSecret(ctx, cluster, instance.IP, keys); err != nil {
 		setServiceLBNotReady(verdaCluster, "WaitingForWorkloadCluster", err.Error())
 		log.V(4).Info("Could not publish service load balancer secret to the workload cluster yet", "err", err.Error())
@@ -120,8 +113,6 @@ func (r *clusterScope) reconcileServiceLoadBalancer(ctx context.Context, cluster
 	return false, nil
 }
 
-// publishServiceLoadBalancerSecret upserts kube-system/verda-service-lb in the
-// workload cluster with what the cloud controller manager needs.
 func (r *clusterScope) publishServiceLoadBalancerSecret(ctx context.Context, cluster *clusterv1.Cluster, address string, keys *loadbalancer.Keys) error {
 	kubeconfigBytes, err := kubeconfig.FromSecret(ctx, r.Client, client.ObjectKeyFromObject(cluster))
 	if err != nil {
@@ -155,10 +146,6 @@ func (r *clusterScope) publishServiceLoadBalancerSecret(ctx context.Context, clu
 	return workloadClient.Update(ctx, existing)
 }
 
-// removeServiceLoadBalancerSecret deletes kube-system/verda-service-lb from
-// the workload cluster so the cloud controller manager stops reporting
-// addresses for a load balancer that no longer exists. Best effort: the
-// workload cluster may be unreachable or gone.
 func (r *clusterScope) removeServiceLoadBalancerSecret(ctx context.Context, cluster *clusterv1.Cluster) {
 	kubeconfigBytes, err := kubeconfig.FromSecret(ctx, r.Client, client.ObjectKeyFromObject(cluster))
 	if err != nil {
@@ -181,8 +168,6 @@ func (r *clusterScope) workloadClient(kubeconfigBytes []byte) (client.Client, er
 	return DefaultWorkloadClient(kubeconfigBytes)
 }
 
-// deleteServiceLoadBalancer removes the envoy instance; the workload cluster
-// Secret dies with the cluster.
 func (r *clusterScope) deleteServiceLoadBalancer(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (requeue bool, err error) {
 	status := &verdaCluster.Status.ServiceLoadBalancer
 	instance, err := r.findInstanceByStatusOrTag(ctx, status.InstanceID, cloud.TagServiceLoadBalancer, clusterTagValue(verdaCluster))
@@ -219,8 +204,6 @@ func (r *clusterScope) deleteServiceLoadBalancer(ctx context.Context, verdaClust
 	return false, nil
 }
 
-// findInstanceByStatusOrTag finds a load balancer instance by recorded ID,
-// falling back to the tag so an unrecorded create is recovered.
 func (r *clusterScope) findInstanceByStatusOrTag(ctx context.Context, id, tagKey, tagValue string) (*cloud.Instance, error) {
 	if id != "" {
 		instance, err := r.cloud.GetInstance(ctx, id)

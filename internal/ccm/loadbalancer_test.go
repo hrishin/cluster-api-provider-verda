@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the service load balancer rendering and backend selection.
+
 package ccm
 
 import (
@@ -71,7 +73,7 @@ func TestServiceLoadBalancer(t *testing.T) {
 	kube := fake.NewClientset(lbSecret(), nginx, dns, later, clusterIP,
 		node("w-0", "10.0.0.1", true, nil),
 		node("w-1", "10.0.0.2", true, nil),
-		node("w-2", "10.0.0.3", false, nil), // not Ready yet: still a backend, health checks decide
+		node("w-2", "10.0.0.3", false, nil),
 		node("cp-0", "10.0.0.9", true, map[string]string{excludeFromLBLabel: ""}),
 	)
 	updater := &loadbalancer.FakeUpdater{}
@@ -104,12 +106,10 @@ func TestServiceLoadBalancer(t *testing.T) {
 		}
 	}
 
-	// The conflicting Service gets an error of its own.
 	if _, err := lb.EnsureLoadBalancer(ctx, "c", later, nil); err == nil || !strings.Contains(err.Error(), "already used by default/nginx") {
 		t.Errorf("expected port conflict error, got %v", err)
 	}
 
-	// Deleting nginx frees the port for later on the next sync.
 	if err := lb.EnsureLoadBalancerDeleted(ctx, "c", nginx); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,6 @@ func TestServiceLoadBalancer(t *testing.T) {
 		t.Errorf("config after delete: %s", cds)
 	}
 
-	// No secret means no load balancer.
 	empty := fake.NewClientset()
 	p2 := New(cloud.NewFake()).WithKubeClient(empty, &loadbalancer.FakeUpdater{})
 	lb2, _ := p2.LoadBalancer()

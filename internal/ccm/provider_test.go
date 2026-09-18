@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the InstancesV2 implementation.
+
 package ccm
 
 import (
@@ -45,7 +47,6 @@ func TestProvider(t *testing.T) {
 		t.Errorf("unexpected addresses: %+v", meta.NodeAddresses)
 	}
 
-	// Lookup by provider ID once set.
 	node.Spec.ProviderID = "verda://cp-0"
 	node.Name = "renamed"
 	if ok, err := p.InstanceExists(ctx, node); err != nil || !ok {

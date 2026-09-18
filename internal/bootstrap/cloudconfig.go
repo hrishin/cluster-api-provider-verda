@@ -14,13 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package bootstrap converts Cluster API bootstrap data into a Verda startup script.
-//
-// Verda instances take a plain shell script at boot rather than cloud-init
-// user-data, while the kubeadm bootstrap provider produces a #cloud-config
-// document. This package translates the subset of cloud-config that the
-// kubeadm bootstrap provider emits (bootcmd, write_files, runcmd) into bash,
-// in the same spirit as the Cluster API Docker provider.
+// Converts kubeadm cloud-config bootstrap data into a Verda startup script.
+
 package bootstrap
 
 import (
@@ -36,24 +31,16 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// MaxScriptSize is the largest startup script the Verda API accepts (measured:
-// 48896 bytes accepted, 49152 rejected).
 const MaxScriptSize = 48 * 1024
 
-// compressThreshold is the script size above which the generated script is
-// shipped gzip-compressed inside a small decompressing wrapper.
 const compressThreshold = 24 * 1024
 
-// ErrScriptTooLarge is returned when even the compressed script exceeds MaxScriptSize.
 var ErrScriptTooLarge = fmt.Errorf("startup script exceeds Verda's %d byte limit", MaxScriptSize)
 
 const cloudConfigHeader = "#cloud-config"
 
-// LogPath is where the generated script records its output on the instance.
 const LogPath = "/var/log/capi-bootstrap.log"
 
-// cloudConfig is the subset of cloud-config understood by this package.
-// Unknown top-level keys are collected and reported, not silently dropped.
 type cloudConfig struct {
 	BootCmd    []command   `json:"bootcmd,omitempty"`
 	WriteFiles []writeFile `json:"write_files,omitempty"`
@@ -64,8 +51,6 @@ type cloudConfig struct {
 
 var knownKeys = map[string]bool{"bootcmd": true, "write_files": true, "runcmd": true, "users": true, "ntp": true}
 
-// user is the subset of cloud-init's users module that the kubeadm bootstrap
-// provider emits (KubeadmConfigSpec.users).
 type user struct {
 	Name              string   `json:"name"`
 	Gecos             string   `json:"gecos,omitempty"`
@@ -80,7 +65,6 @@ type user struct {
 	SSHAuthorizedKeys []string `json:"ssh_authorized_keys,omitempty"`
 }
 
-// ntp mirrors cloud-init's ntp module as emitted by the kubeadm bootstrap provider.
 type ntp struct {
 	Enabled *bool    `json:"enabled,omitempty"`
 	Servers []string `json:"servers,omitempty"`
@@ -95,7 +79,6 @@ type writeFile struct {
 	Append      bool   `json:"append,omitempty"`
 }
 
-// command is a cloud-init command: either a shell string or an argv list.
 type command []string
 
 func (c *command) UnmarshalJSON(data []byte) error {
@@ -112,7 +95,6 @@ func (c *command) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// shell renders the command as a bash line.
 func (c command) shell() string {
 	if len(c) == 1 {
 		return c[0]
@@ -124,17 +106,12 @@ func (c command) shell() string {
 	return strings.Join(quoted, " ")
 }
 
-// Result is the generated startup script plus anything that could not be translated.
 type Result struct {
 	Script string
-	// Unsupported lists cloud-config top-level keys that were present in the
-	// input but are not translated (for example users, ntp, mounts).
+
 	Unsupported []string
 }
 
-// Placeholders substituted before conversion. Verda has no instance metadata
-// service, so the cloud-init jinja variables that Cluster API templates
-// conventionally use for the node hostname are resolved here instead.
 var hostnamePlaceholders = []string{
 	"{{ ds.meta_data.hostname }}",
 	"{{ ds.meta_data.local_hostname }}",
@@ -142,9 +119,6 @@ var hostnamePlaceholders = []string{
 	"{{ds.meta_data.local_hostname}}",
 }
 
-// ToStartupScript converts cloud-config bootstrap data into a bash startup script.
-// Data that is already a shell script (starts with #!) is returned unchanged.
-// hostname replaces the cloud-init hostname placeholders in the data.
 func ToStartupScript(data []byte, hostname string) (*Result, error) {
 	for _, placeholder := range hostnamePlaceholders {
 		data = bytes.ReplaceAll(data, []byte(placeholder), []byte(hostname))
@@ -230,8 +204,6 @@ func ToStartupScript(data []byte, hostname string) (*Result, error) {
 	return res, nil
 }
 
-// fit returns script unchanged if it is small, otherwise wrapped in a
-// gzip-decompressing stub, and fails if the result still exceeds MaxScriptSize.
 func fit(script string) (string, error) {
 	if len(script) <= compressThreshold {
 		return script, nil
@@ -261,7 +233,6 @@ func fit(script string) (string, error) {
 	return out, nil
 }
 
-// userScript creates or updates a user as cloud-init's users module would.
 func userScript(b *strings.Builder, u user) {
 	if u.Name == "" {
 		return
@@ -308,7 +279,6 @@ func userScript(b *strings.Builder, u user) {
 	}
 }
 
-// ntpScript points chrony (the default on Ubuntu images) at the given servers.
 func ntpScript(b *strings.Builder, n *ntp) {
 	if len(n.Servers) == 0 {
 		return
@@ -323,8 +293,6 @@ func ntpScript(b *strings.Builder, n *ntp) {
 	b.WriteString("fi\n")
 }
 
-// isCloudConfig reports whether data carries the #cloud-config header. The
-// kubeadm bootstrap provider precedes it with a "## template: jinja" line.
 func isCloudConfig(data []byte) bool {
 	for _, line := range bytes.SplitN(data, []byte("\n"), 4) {
 		if bytes.Equal(bytes.TrimSpace(line), []byte(cloudConfigHeader)) {
@@ -334,9 +302,6 @@ func isCloudConfig(data []byte) bool {
 	return false
 }
 
-// writeFileScript emits the shell needed to materialise one write_files entry.
-// Content is always transported base64-encoded so that arbitrary bytes never
-// collide with heredoc delimiters or shell syntax.
 func writeFileScript(b *strings.Builder, idx int, f writeFile) error {
 	if f.Path == "" {
 		return fmt.Errorf("write_files[%d]: path is required", idx)
@@ -345,7 +310,7 @@ func writeFileScript(b *strings.Builder, idx int, f writeFile) error {
 	if err != nil {
 		return fmt.Errorf("write_files[%d] (%s): %w", idx, f.Path, err)
 	}
-	// gzip content is left compressed and inflated on the instance.
+
 	decoder := "base64 -d"
 	if isGzip(f.Encoding) {
 		decoder = "base64 -d | gunzip"
@@ -369,8 +334,6 @@ func writeFileScript(b *strings.Builder, idx int, f writeFile) error {
 	return nil
 }
 
-// decodeContent returns the raw bytes to ship for a write_files entry. Plain
-// and base64 content are decoded; gzip variants are returned still compressed.
 func decodeContent(content, encoding string) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "", "text/plain":
@@ -392,7 +355,6 @@ func isGzip(encoding string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(encoding)), "gz")
 }
 
-// wrapBase64 splits a base64 string into 76-column lines, which base64 -d accepts.
 func wrapBase64(s string) string {
 	const width = 76
 	var b strings.Builder
@@ -406,7 +368,6 @@ func wrapBase64(s string) string {
 	return b.String()
 }
 
-// shellQuote single-quotes s for safe use as a bash word.
 func shellQuote(s string) string {
 	if s == "" {
 		return "''"

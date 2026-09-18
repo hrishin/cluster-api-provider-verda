@@ -1,0 +1,45 @@
+# Managed by cluster-api-provider-verda. Do not edit.
+resources:
+{{- range . }}
+- "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+  name: {{ .Name }}
+  type: STATIC
+  connect_timeout: 5s
+  lb_policy: ROUND_ROBIN
+  load_assignment:
+    cluster_name: {{ .Name }}
+    endpoints:
+    - lb_endpoints:
+{{- range .Backends }}
+      - endpoint:
+          address:
+            socket_address: {address: {{ .Address }}, port_value: {{ .Port }}}
+{{- else }}
+      []
+{{- end }}
+{{- if or (gt .HealthCheckPort 0) (not .UDP) }}
+  health_checks:
+  - timeout: 2s
+    interval: 5s
+    no_traffic_interval: 5s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+{{- if gt .HealthCheckPort 0 }}
+    alt_port: {{ .HealthCheckPort }}
+    http_health_check: {path: /healthz}
+{{- else }}
+    tcp_health_check: {}
+{{- end }}
+{{- end }}
+{{- if and .ProxyProtocol (not .UDP) }}
+  transport_socket:
+    name: envoy.transport_sockets.upstream_proxy_protocol
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.transport_sockets.proxy_protocol.v3.ProxyProtocolUpstreamTransport
+      config: {version: V2}
+      transport_socket:
+        name: envoy.transport_sockets.raw_buffer
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.raw_buffer.v3.RawBuffer
+{{- end }}
+{{- end }}

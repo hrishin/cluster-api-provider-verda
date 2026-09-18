@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// VerdaMachine: one Verda instance backing a Cluster API Machine.
+
 package v1beta1
 
 import (
@@ -38,7 +40,6 @@ const (
 	ProviderIDPrefix = "verda://"
 )
 
-// ProviderID returns the provider ID for an instance with the given hostname.
 func ProviderID(hostname string) string {
 	return ProviderIDPrefix + hostname
 }
@@ -236,12 +237,10 @@ type VerdaMachine struct {
 	Status VerdaMachineStatus `json:"status,omitempty,omitzero"`
 }
 
-// GetConditions returns the set of conditions for this object.
 func (m *VerdaMachine) GetConditions() []metav1.Condition {
 	return m.Status.Conditions
 }
 
-// SetConditions sets the conditions on this object.
 func (m *VerdaMachine) SetConditions(conditions []metav1.Condition) {
 	m.Status.Conditions = conditions
 }

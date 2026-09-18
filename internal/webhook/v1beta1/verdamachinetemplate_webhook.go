@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Validation webhook for VerdaMachineTemplate.
+
 package v1beta1
 
 import (
@@ -30,7 +32,6 @@ import (
 	infrav1 "github.com/hrishin/verda-capi/api/v1beta1"
 )
 
-// SetupVerdaMachineTemplateWebhookWithManager registers the webhook for VerdaMachineTemplate in the manager.
 func SetupVerdaMachineTemplateWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &infrav1.VerdaMachineTemplate{}).
 		WithValidator(&VerdaMachineTemplateCustomValidator{}).
@@ -40,10 +41,8 @@ func SetupVerdaMachineTemplateWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-verdamachinetemplate,mutating=true,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdamachinetemplates,verbs=create;update,versions=v1beta1,name=mverdamachinetemplate-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaMachineTemplateCustomDefaulter sets defaults on VerdaMachineTemplates.
 type VerdaMachineTemplateCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter.
 func (d *VerdaMachineTemplateCustomDefaulter) Default(_ context.Context, obj *infrav1.VerdaMachineTemplate) error {
 	defaultMachineSpec(&obj.Spec.Template.Spec)
 	return nil
@@ -51,18 +50,12 @@ func (d *VerdaMachineTemplateCustomDefaulter) Default(_ context.Context, obj *in
 
 // +kubebuilder:webhook:path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-verdamachinetemplate,mutating=false,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdamachinetemplates,verbs=create;update,versions=v1beta1,name=vverdamachinetemplate-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaMachineTemplateCustomValidator validates VerdaMachineTemplates. The
-// template spec is immutable, except for server-side-apply dry runs issued by
-// the Cluster API topology controller, which the provider contract requires
-// to be allowed.
 type VerdaMachineTemplateCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator.
 func (v *VerdaMachineTemplateCustomValidator) ValidateCreate(_ context.Context, obj *infrav1.VerdaMachineTemplate) (admission.Warnings, error) {
 	return nil, aggregate(obj, validateMachineSpec(&obj.Spec.Template.Spec, field.NewPath("spec", "template", "spec")))
 }
 
-// ValidateUpdate implements webhook.CustomValidator.
 func (v *VerdaMachineTemplateCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *infrav1.VerdaMachineTemplate) (admission.Warnings, error) {
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
@@ -75,7 +68,6 @@ func (v *VerdaMachineTemplateCustomValidator) ValidateUpdate(ctx context.Context
 	return nil, aggregate(newObj, errs)
 }
 
-// ValidateDelete implements webhook.CustomValidator.
 func (v *VerdaMachineTemplateCustomValidator) ValidateDelete(_ context.Context, _ *infrav1.VerdaMachineTemplate) (admission.Warnings, error) {
 	return nil, nil
 }

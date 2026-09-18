@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the envoy service load balancer.
+
 package controller
 
 import (
@@ -81,8 +83,7 @@ var _ = Describe("VerdaCluster with a service load balancer", func() {
 		Expect(verdaCluster.Status.ServiceLoadBalancer.Address).To(Equal("198.51.100.20"))
 
 		By("publishing the secret into the workload cluster")
-		// The test suite's WorkloadClient returns k8sClient itself, so the
-		// "workload" Secret lands in this envtest's kube-system.
+
 		kubeconfigSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: secret.Name(cluster.Name, secret.Kubeconfig), Namespace: ns.Name,
 				Labels: map[string]string{clusterv1.ClusterNameLabel: cluster.Name}},

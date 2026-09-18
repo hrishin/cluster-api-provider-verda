@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the Secret-backed client factory.
+
 package cloud
 
 import (
@@ -63,7 +65,6 @@ func TestSecretFactory(t *testing.T) {
 		t.Errorf("credentials not read from secret: %+v", built[0])
 	}
 
-	// A changed secret yields a new client.
 	secret.ResourceVersion = ""
 	secret.Data[SecretKeyClientSecret] = []byte("rotated")
 	if err := k8s.Update(ctx, secret); err != nil {

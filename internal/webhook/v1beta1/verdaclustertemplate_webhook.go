@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Validation webhook for VerdaClusterTemplate.
+
 package v1beta1
 
 import (
@@ -30,7 +32,6 @@ import (
 	infrav1 "github.com/hrishin/verda-capi/api/v1beta1"
 )
 
-// SetupVerdaClusterTemplateWebhookWithManager registers the webhook for VerdaClusterTemplate in the manager.
 func SetupVerdaClusterTemplateWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &infrav1.VerdaClusterTemplate{}).
 		WithValidator(&VerdaClusterTemplateCustomValidator{}).
@@ -40,10 +41,8 @@ func SetupVerdaClusterTemplateWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-verdaclustertemplate,mutating=true,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdaclustertemplates,verbs=create;update,versions=v1beta1,name=mverdaclustertemplate-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaClusterTemplateCustomDefaulter sets defaults on VerdaClusterTemplates.
 type VerdaClusterTemplateCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter.
 func (d *VerdaClusterTemplateCustomDefaulter) Default(_ context.Context, obj *infrav1.VerdaClusterTemplate) error {
 	defaultClusterSpec(&obj.Spec.Template.Spec)
 	return nil
@@ -51,16 +50,12 @@ func (d *VerdaClusterTemplateCustomDefaulter) Default(_ context.Context, obj *in
 
 // +kubebuilder:webhook:path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-verdaclustertemplate,mutating=false,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdaclustertemplates,verbs=create;update,versions=v1beta1,name=vverdaclustertemplate-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaClusterTemplateCustomValidator validates VerdaClusterTemplates; the
-// template spec is immutable except for topology dry-run requests.
 type VerdaClusterTemplateCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator.
 func (v *VerdaClusterTemplateCustomValidator) ValidateCreate(_ context.Context, obj *infrav1.VerdaClusterTemplate) (admission.Warnings, error) {
 	return nil, aggregate(obj, validateClusterSpec(&obj.Spec.Template.Spec, field.NewPath("spec", "template", "spec")))
 }
 
-// ValidateUpdate implements webhook.CustomValidator.
 func (v *VerdaClusterTemplateCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *infrav1.VerdaClusterTemplate) (admission.Warnings, error) {
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
@@ -73,7 +68,6 @@ func (v *VerdaClusterTemplateCustomValidator) ValidateUpdate(ctx context.Context
 	return nil, aggregate(newObj, errs)
 }
 
-// ValidateDelete implements webhook.CustomValidator.
 func (v *VerdaClusterTemplateCustomValidator) ValidateDelete(_ context.Context, _ *infrav1.VerdaClusterTemplate) (admission.Warnings, error) {
 	return nil, nil
 }

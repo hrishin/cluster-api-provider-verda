@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Pushes configuration to load balancer instances over SSH with a pinned host key.
+
 package loadbalancer
 
 import (
@@ -29,23 +31,17 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// File is a configuration file to install on a load balancer.
 type File struct {
 	Path    string
 	Content string
 }
 
-// Updater pushes configuration to a running load balancer.
 type Updater interface {
-	// UpdateBackends installs the haproxy configuration for backends on the
-	// control plane load balancer at addr, authenticating with keys.
 	UpdateBackends(ctx context.Context, addr string, keys *Keys, backends []string) error
-	// UpdateFiles atomically installs files on the load balancer at addr and
-	// runs reload afterwards (may be empty).
+
 	UpdateFiles(ctx context.Context, addr string, keys *Keys, files []File, reload string) error
 }
 
-// SSHUpdater implements Updater over SSH as root.
 type SSHUpdater struct {
 	Timeout time.Duration
 }
@@ -56,13 +52,10 @@ func (u *SSHUpdater) UpdateBackends(ctx context.Context, addr string, keys *Keys
 	return u.run(ctx, addr, keys, strings.NewReader(Config(backends)), UpdateCommand)
 }
 
-// UpdateFiles implements Updater. Each file is written next to its
-// destination and moved into place so watchers (envoy) see one atomic change.
 func (u *SSHUpdater) UpdateFiles(ctx context.Context, addr string, keys *Keys, files []File, reload string) error {
 	return u.run(ctx, addr, keys, strings.NewReader(InstallScript(files, reload)), "bash -s")
 }
 
-// InstallScript renders the shell that installs files atomically and reloads.
 func InstallScript(files []File, reload string) string {
 	var b strings.Builder
 	b.WriteString("set -euo pipefail\n")
@@ -76,7 +69,6 @@ func InstallScript(files []File, reload string) string {
 	return b.String()
 }
 
-// wrapBase64 splits a base64 string into 76-column lines.
 func wrapBase64(s string) string {
 	const width = 76
 	var b strings.Builder
@@ -142,15 +134,13 @@ func (u *SSHUpdater) run(ctx context.Context, addr string, keys *Keys, stdin io.
 	return nil
 }
 
-// FakeUpdater records backend updates for tests.
 type FakeUpdater struct {
-	// Backends is the last backend list pushed per address.
 	Backends map[string][]string
-	// Files is the last file set pushed per address.
+
 	Files map[string][]File
-	// Calls counts UpdateBackends and UpdateFiles invocations.
+
 	Calls int
-	// Err, when set, is returned by UpdateBackends and UpdateFiles.
+
 	Err error
 }
 

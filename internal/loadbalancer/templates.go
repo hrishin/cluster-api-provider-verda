@@ -14,24 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Tests for the Verda API client helpers.
+// Embedded Go templates for the load balancer configuration files.
 
-package cloud
+package loadbalancer
 
 import (
-	"slices"
-	"testing"
-
-	"github.com/verda-cloud/verdacloud-sdk-go/pkg/verda"
-	"k8s.io/utils/ptr"
+	"embed"
+	"encoding/base64"
+	"strings"
+	"text/template"
 )
 
-func TestInstanceVolumeIDsDeduplicates(t *testing.T) {
-	inst := &verda.Instance{OSVolumeID: ptr.To("os"), VolumeIDs: []string{"os", "data", "data"}}
-	if got := instanceVolumeIDs(inst); !slices.Equal(got, []string{"os", "data"}) {
-		t.Errorf("got %v", got)
+//go:embed templates/*.tmpl
+var templateFS embed.FS
+
+var templates = template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
+
+func render(name string, data any) string {
+	var b strings.Builder
+	if err := templates.ExecuteTemplate(&b, name, data); err != nil {
+		panic("loadbalancer: rendering " + name + ": " + err.Error())
 	}
-	if got := instanceVolumeIDs(&verda.Instance{}); len(got) != 0 {
-		t.Errorf("got %v for an instance without volumes", got)
-	}
+	return b.String()
 }
+
+func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }

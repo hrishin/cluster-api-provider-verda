@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Defaulting and validation webhook for VerdaCluster.
+
 package v1beta1
 
 import (
@@ -26,7 +28,6 @@ import (
 	infrav1 "github.com/hrishin/verda-capi/api/v1beta1"
 )
 
-// SetupVerdaClusterWebhookWithManager registers the webhook for VerdaCluster in the manager.
 func SetupVerdaClusterWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &infrav1.VerdaCluster{}).
 		WithValidator(&VerdaClusterCustomValidator{}).
@@ -36,10 +37,8 @@ func SetupVerdaClusterWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-verdacluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdaclusters,verbs=create;update,versions=v1beta1,name=mverdacluster-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaClusterCustomDefaulter sets defaults on VerdaClusters.
 type VerdaClusterCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter.
 func (d *VerdaClusterCustomDefaulter) Default(_ context.Context, obj *infrav1.VerdaCluster) error {
 	defaultClusterSpec(&obj.Spec)
 	return nil
@@ -67,22 +66,18 @@ func defaultLoadBalancer(lb *infrav1.ControlPlaneLoadBalancer) {
 
 // +kubebuilder:webhook:path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-verdacluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=infrastructure.cluster.x-k8s.io,resources=verdaclusters,verbs=create;update,versions=v1beta1,name=vverdacluster-v1beta1.kb.io,admissionReviewVersions=v1
 
-// VerdaClusterCustomValidator validates VerdaClusters.
 type VerdaClusterCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator.
 func (v *VerdaClusterCustomValidator) ValidateCreate(_ context.Context, obj *infrav1.VerdaCluster) (admission.Warnings, error) {
 	return nil, aggregate(obj, validateClusterSpec(&obj.Spec, field.NewPath("spec")))
 }
 
-// ValidateUpdate implements webhook.CustomValidator.
 func (v *VerdaClusterCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *infrav1.VerdaCluster) (admission.Warnings, error) {
 	errs := validateClusterSpec(&newObj.Spec, field.NewPath("spec"))
 	errs = append(errs, validateClusterSpecUpdate(&oldObj.Spec, &newObj.Spec, field.NewPath("spec"))...)
 	return nil, aggregate(newObj, errs)
 }
 
-// ValidateDelete implements webhook.CustomValidator.
 func (v *VerdaClusterCustomValidator) ValidateDelete(_ context.Context, _ *infrav1.VerdaCluster) (admission.Warnings, error) {
 	return nil, nil
 }

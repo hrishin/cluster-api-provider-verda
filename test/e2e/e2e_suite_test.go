@@ -16,16 +16,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package e2e creates real clusters on Verda through an existing management
-// cluster. It needs:
-//
-//   - a management cluster with Cluster API, the kubeadm providers and this
-//     provider (CRDs + a running manager) in the current kubeconfig context
-//   - Verda credentials the manager can use, and VERDA_CLIENT_ID /
-//     VERDA_CLIENT_SECRET for the cloud controller manager
-//   - E2E_VERDA_LOCATION, E2E_VERDA_OS_VOLUME_ID and E2E_VERDA_SSH_KEY_ID
-//
-// Run with: make test-e2e
+// Suite setup for the end-to-end tests.
+
 package e2e
 
 import (

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// In-memory fake of the Verda API mirroring its instance, volume and deletion semantics, for tests.
+
 package cloud
 
 import (
@@ -23,23 +25,20 @@ import (
 	"sync"
 )
 
-// Fake is an in-memory Client for tests. Instances are created in the
-// "provisioning" state; tests call SetStatus to move them along.
 type Fake struct {
 	mu        sync.Mutex
 	nextID    int
 	Instances map[string]*Instance
 	Scripts   map[string]string
-	// ScriptNames maps script IDs to names.
+
 	ScriptNames map[string]string
 	Volumes     map[string]*Volume
-	// InstanceTypes is the catalog served by GetInstanceType.
+
 	InstanceTypes map[string]*InstanceTypeInfo
-	// Created records every InstanceSpec passed to CreateInstance.
+
 	Created []InstanceSpec
 }
 
-// NewFake returns an empty Fake.
 func NewFake() *Fake {
 	return &Fake{
 		Instances: map[string]*Instance{}, Scripts: map[string]string{}, ScriptNames: map[string]string{}, Volumes: map[string]*Volume{},
@@ -145,7 +144,7 @@ func (f *Fake) CreateInstance(_ context.Context, spec InstanceSpec) (*Instance, 
 		StartupScriptID: scriptID,
 		Tags:            maps.Clone(spec.Tags),
 	}
-	// Booting from an existing OS volume attaches it to the instance.
+
 	if vol, ok := f.Volumes[spec.Image]; ok {
 		vol.Status = "attached"
 		vol.InstanceID = id
@@ -163,8 +162,7 @@ func (f *Fake) DeleteInstance(_ context.Context, id string) error {
 		return ErrNotManaged
 	}
 	if ok {
-		// Verda deletes the OS volume together with the instance and keeps the
-		// instance queryable as StatusDiscontinued.
+
 		delete(f.Volumes, inst.OSVolumeID)
 		inst.Status = StatusDiscontinued
 	}
@@ -223,8 +221,6 @@ func (f *Fake) FindVolumeByName(_ context.Context, name string) (*Volume, error)
 	return nil, ErrNotFound
 }
 
-// CloneVolume creates a clone in the "cloning" state; tests call SetVolumeStatus
-// to make it "detached".
 func (f *Fake) CloneVolume(_ context.Context, sourceID, name, location string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -257,15 +253,12 @@ func (f *Fake) DeleteVolume(_ context.Context, id string) error {
 	return nil
 }
 
-// Reset clears the recorded creates. Existing instances and volumes are kept
-// so that objects from earlier tests can still be cleaned up.
 func (f *Fake) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Created = nil
 }
 
-// SetVolumeStatus updates the status of a volume.
 func (f *Fake) SetVolumeStatus(id, status string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -274,7 +267,6 @@ func (f *Fake) SetVolumeStatus(id, status string) {
 	}
 }
 
-// SetStatus updates the status and IP of an instance.
 func (f *Fake) SetStatus(id, status, ip string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

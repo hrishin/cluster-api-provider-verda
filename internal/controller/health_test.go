@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for instance state tracking, remediation and no-capacity handling.
+
 package controller
 
 import (
@@ -32,8 +34,6 @@ import (
 	"github.com/hrishin/verda-capi/internal/cloud"
 )
 
-// provisionedMachine sets up a cluster and a VerdaMachine whose instance is
-// running and provisioned, returning the VerdaMachine and its instance ID.
 func provisionedMachine(nsPrefix string) (*infrav1.VerdaMachine, string) {
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: nsPrefix}}
 	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -97,7 +97,7 @@ var _ = Describe("VerdaMachine health", func() {
 		vm, instanceID := provisionedMachine("health-")
 
 		fakeCloud.SetStatus(instanceID, "discontinued", "")
-		// Nudge a reconcile instead of waiting for the 5 minute resync.
+
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
 			vm.Annotations = map[string]string{"test/poke": "1"}
@@ -161,8 +161,7 @@ var _ = Describe("VerdaMachine health", func() {
 		}, timeout, interval).Should(Succeed())
 
 		fakeCloud.SetStatus(first, "no_capacity", "")
-		// The failed instance is deleted and forgotten, so the retry creates a
-		// fresh one (the NoCapacity reason is only visible in between).
+
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
 			g.Expect(vm.Status.InstanceID).NotTo(BeEmpty())
@@ -241,7 +240,7 @@ var _ = Describe("Orphaned objects", func() {
 			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G", Image: "ubuntu-24.04"},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
-		// Wait for the finalizers to be added, then delete.
+
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vc), vc)).To(Succeed())
 			g.Expect(vc.Finalizers).To(ContainElement(infrav1.ClusterFinalizer))

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// VerdaMachineTemplate reconciler filling status.capacity and nodeInfo from the instance type catalog.
+
 package controller
 
 import (
@@ -39,15 +41,10 @@ import (
 	"github.com/hrishin/verda-capi/internal/cloud"
 )
 
-// capacityResyncInterval bounds how stale a template's capacity can be.
 const capacityResyncInterval = 12 * time.Hour
 
-// gpuResourceName is the extended resource the NVIDIA device plugin exposes.
 const gpuResourceName corev1.ResourceName = "nvidia.com/gpu"
 
-// VerdaMachineTemplateReconciler fills in VerdaMachineTemplate.status.capacity
-// and nodeInfo from the Verda instance type catalog so cluster-autoscaler can
-// scale node groups from zero.
 type VerdaMachineTemplateReconciler struct {
 	client.Client
 	CloudFactory     cloud.Factory
@@ -57,7 +54,6 @@ type VerdaMachineTemplateReconciler struct {
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=verdamachinetemplates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=verdamachinetemplates/status,verbs=get;update;patch
 
-// Reconcile resolves the template's instance type to node capacity.
 func (r *VerdaMachineTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -82,9 +78,6 @@ func (r *VerdaMachineTemplateReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}()
 
-	// Templates are not tied to a cluster until referenced; use the identity
-	// of the cluster named in the cluster-name label when present, otherwise
-	// the global credentials. The catalog is account-independent anyway.
 	identity := cloud.Identity{Namespace: template.Namespace}
 	if clusterName, ok := template.Labels[clusterv1.ClusterNameLabel]; ok {
 		cluster := &clusterv1.Cluster{}
@@ -119,7 +112,6 @@ func (r *VerdaMachineTemplateReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{RequeueAfter: capacityResyncInterval}, nil
 }
 
-// capacityFor converts catalog data into a node resource list.
 func capacityFor(info *cloud.InstanceTypeInfo) corev1.ResourceList {
 	capacity := corev1.ResourceList{
 		corev1.ResourceCPU:    *resource.NewQuantity(int64(info.CPUs), resource.DecimalSI),
@@ -135,7 +127,6 @@ func setCapacityNotReady(template *infrav1.VerdaMachineTemplate, reason, message
 	conditions.Set(template, metav1.Condition{Type: infrav1.CapacityReadyCondition, Status: metav1.ConditionFalse, Reason: reason, Message: message})
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *VerdaMachineTemplateReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
 	predicateLog := ctrl.LoggerFrom(ctx).WithValues("controller", "verdamachinetemplate")
 	return ctrl.NewControllerManagedBy(mgr).

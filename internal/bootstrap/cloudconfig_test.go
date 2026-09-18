@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the cloud-config to startup script conversion.
+
 package bootstrap
 
 import (
@@ -109,7 +111,7 @@ func TestToStartupScriptRejectsUnknownFormat(t *testing.T) {
 }
 
 func TestLargeScriptIsCompressed(t *testing.T) {
-	big := strings.Repeat("0123456789abcdef", 4096) // 64 KiB, compressible
+	big := strings.Repeat("0123456789abcdef", 4096)
 	cfg := "#cloud-config\nwrite_files:\n-   path: /tmp/big\n    content: " + big + "\n"
 	res, err := ToStartupScript([]byte(cfg), "h")
 	if err != nil {
@@ -122,7 +124,6 @@ func TestLargeScriptIsCompressed(t *testing.T) {
 		t.Errorf("script is %d bytes, over the %d limit", len(res.Script), MaxScriptSize)
 	}
 
-	// Content that does not compress must be rejected up front.
 	var sb strings.Builder
 	x := uint32(2463534242)
 	for range 80 * 1024 {
@@ -137,8 +138,6 @@ func TestLargeScriptIsCompressed(t *testing.T) {
 	}
 }
 
-// TestScriptExecutes runs the generated script in a sandbox root to check the
-// emitted shell is actually valid.
 func TestScriptExecutes(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
@@ -162,7 +161,7 @@ runcmd:
 	if err != nil {
 		t.Fatalf("ToStartupScript: %v", err)
 	}
-	// Redirect the log to the sandbox.
+
 	script := strings.Replace(res.Script, LogPath, filepath.Join(root, "log"), 1)
 	cmd := exec.Command("bash", "-c", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -189,8 +188,6 @@ runcmd:
 		}
 	}
 
-	// The compressed variant must behave identically; redirect the unpack path
-	// into the sandbox.
 	compressed, err := fit(strings.Repeat("# padding to force compression\n", 1000) + script)
 	if err != nil {
 		t.Fatal(err)

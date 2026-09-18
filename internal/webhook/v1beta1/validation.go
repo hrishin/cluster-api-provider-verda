@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1beta1 holds the admission webhooks for the infrastructure v1beta1 API.
+// Shared validation helpers for the admission webhooks.
+
 package v1beta1
 
 import (
@@ -28,7 +29,6 @@ import (
 
 var locationCodeRe = regexp.MustCompile(`^[A-Z]{3}-[0-9]{2}$`)
 
-// validateMachineSpec checks a VerdaMachineSpec on its own.
 func validateMachineSpec(spec *infrav1.VerdaMachineSpec, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	if spec.InstanceType == "" {
@@ -52,8 +52,6 @@ func validateMachineSpec(spec *infrav1.VerdaMachineSpec, path *field.Path) field
 	return errs
 }
 
-// validateMachineSpecUpdate rejects changes to fields that would require a
-// new instance. providerID may be set once (by the controller) but not changed.
 func validateMachineSpecUpdate(oldSpec, newSpec *infrav1.VerdaMachineSpec, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	if oldSpec.InstanceType != newSpec.InstanceType {
@@ -86,7 +84,6 @@ func validateMachineSpecUpdate(oldSpec, newSpec *infrav1.VerdaMachineSpec, path 
 	return errs
 }
 
-// validateClusterSpec checks a VerdaClusterSpec on its own.
 func validateClusterSpec(spec *infrav1.VerdaClusterSpec, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	if spec.Location == "" {
@@ -95,7 +92,7 @@ func validateClusterSpec(spec *infrav1.VerdaClusterSpec, path *field.Path) field
 		errs = append(errs, field.Invalid(path.Child("location"), spec.Location, "must be a Verda location code such as FIN-01"))
 	}
 	if spec.ControlPlaneEndpoint.Host != "" && spec.ControlPlaneEndpoint.Port == 0 {
-		// Defaulted to 6443 by the mutating webhook; reaching here means defaulting was bypassed.
+
 		errs = append(errs, field.Required(path.Child("controlPlaneEndpoint", "port"), "port is required when host is set"))
 	}
 	for name, lb := range map[string]infrav1.ControlPlaneLoadBalancer{"controlPlaneLoadBalancer": spec.ControlPlaneLoadBalancer, "serviceLoadBalancer": spec.ServiceLoadBalancer} {
@@ -106,7 +103,6 @@ func validateClusterSpec(spec *infrav1.VerdaClusterSpec, path *field.Path) field
 	return errs
 }
 
-// validateClusterSpecUpdate rejects changes that would move or re-front the cluster.
 func validateClusterSpecUpdate(oldSpec, newSpec *infrav1.VerdaClusterSpec, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	if oldSpec.Location != newSpec.Location {
@@ -115,9 +111,7 @@ func validateClusterSpecUpdate(oldSpec, newSpec *infrav1.VerdaClusterSpec, path 
 	if boolValue(oldSpec.ControlPlaneLoadBalancer.Enabled) != boolValue(newSpec.ControlPlaneLoadBalancer.Enabled) {
 		errs = append(errs, field.Forbidden(path.Child("controlPlaneLoadBalancer", "enabled"), "the load balancer cannot be enabled or disabled after creation; the control plane endpoint is baked into the cluster's certificates"))
 	}
-	// The endpoint is part of the API server certificate and every kubeconfig:
-	// once set it cannot change. It may be set once (by the user or, with the
-	// load balancer, by the controller).
+
 	if oldSpec.ControlPlaneEndpoint.Host != "" && oldSpec.ControlPlaneEndpoint != newSpec.ControlPlaneEndpoint {
 		errs = append(errs, field.Forbidden(path.Child("controlPlaneEndpoint"), "controlPlaneEndpoint is immutable once set"))
 	}

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Verda credentials from the environment or the verda CLI's credentials file.
+
 package cloud
 
 import (
@@ -25,14 +27,12 @@ import (
 	"strings"
 )
 
-// Credentials holds what is needed to talk to the Verda API.
 type Credentials struct {
 	BaseURL      string
 	ClientID     string
 	ClientSecret string
 }
 
-// Environment variables consulted by LoadCredentials.
 const (
 	EnvBaseURL      = "VERDA_BASE_URL"
 	EnvClientID     = "VERDA_CLIENT_ID"
@@ -40,14 +40,6 @@ const (
 	EnvProfile      = "VERDA_PROFILE"
 )
 
-// LoadCredentials resolves credentials from the environment first and then
-// from an INI-style credentials file (default ~/.verda/credentials, profile
-// "default"), the same file used by the verda CLI:
-//
-//	[default]
-//	verda_base_url      = https://api.verda.com/v1
-//	verda_client_id     = ...
-//	verda_client_secret = ...
 func LoadCredentials(path string) (Credentials, error) {
 	creds := Credentials{
 		BaseURL:      os.Getenv(EnvBaseURL),

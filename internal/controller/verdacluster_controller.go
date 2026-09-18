@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// VerdaCluster reconciler: control plane endpoint, haproxy load balancer, failure domains and teardown.
+
 package controller
 
 import (
@@ -49,36 +51,28 @@ import (
 	"github.com/hrishin/verda-capi/internal/loadbalancer"
 )
 
-// verdaClusterKind is the kind name used in references and owner references.
 const verdaClusterKind = "VerdaCluster"
 
 const (
-	// lbPollInterval is how often a provisioning load balancer is re-checked.
 	lbPollInterval = 15 * time.Second
-	// lbResyncInterval bounds how long a backend drift can go unnoticed.
+
 	lbResyncInterval = 5 * time.Minute
 
-	// Secret keys for the load balancer SSH material.
 	secretKeyClientPrivate = "ssh-privatekey"
 	secretKeyClientPublic  = "ssh-publickey"
 	secretKeyHostPrivate   = "host-privatekey"
 	secretKeyHostPublic    = "host-publickey"
 )
 
-// VerdaClusterReconciler reconciles a VerdaCluster object.
-//
-// Verda has no managed network or load balancer. Cluster-level infrastructure
-// is therefore either nothing (the user supplies a control plane endpoint) or
-// a provider-managed haproxy instance that fronts the control plane machines.
 type VerdaClusterReconciler struct {
 	client.Client
-	// CloudFactory yields the Verda client for a cluster's credentials.
+
 	CloudFactory cloud.Factory
-	// LoadBalancer pushes backend updates to the haproxy instance.
+
 	LoadBalancer loadbalancer.Updater
-	// WorkloadClient builds clients for workload clusters; nil means DefaultWorkloadClient.
+
 	WorkloadClient WorkloadClientFunc
-	// WatchFilterValue is the label value used to filter events prior to reconciliation.
+
 	WatchFilterValue string
 }
 
@@ -89,7 +83,6 @@ type VerdaClusterReconciler struct {
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status;machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile brings a VerdaCluster in line with its Cluster owner.
 func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -101,8 +94,6 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	// Add the finalizer first so that no infrastructure can be left behind if
-	// the object is deleted between now and the first patch.
 	if finalizerAdded, err := finalizers.EnsureFinalizer(ctx, r.Client, verdaCluster, infrav1.ClusterFinalizer); err != nil || finalizerAdded {
 		return ctrl.Result{}, err
 	}
@@ -113,8 +104,7 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	if cluster == nil {
 		if !verdaCluster.DeletionTimestamp.IsZero() {
-			// Never owned (or the owner is already gone): still clean up
-			// anything created under our finalizer, then let it go.
+
 			return r.reconcileOrphanDelete(ctx, verdaCluster)
 		}
 		log.Info("Waiting for Cluster controller to set OwnerRef on VerdaCluster")
@@ -151,7 +141,6 @@ func (r *VerdaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return scope.reconcileNormal(ctx, cluster, verdaCluster)
 }
 
-// reconcileOrphanDelete deletes a VerdaCluster that has no owning Cluster.
 func (r *VerdaClusterReconciler) reconcileOrphanDelete(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (_ ctrl.Result, reterr error) {
 	patchHelper, err := patch.NewHelper(verdaCluster, r.Client)
 	if err != nil {
@@ -169,7 +158,6 @@ func (r *VerdaClusterReconciler) reconcileOrphanDelete(ctx context.Context, verd
 	return (&clusterScope{VerdaClusterReconciler: r, cloud: verdaClient}).reconcileDelete(ctx, verdaCluster)
 }
 
-// clusterScope is a reconciler bound to the cloud client of one cluster.
 type clusterScope struct {
 	*VerdaClusterReconciler
 	cloud cloud.Client
@@ -181,8 +169,7 @@ func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 		return result, err
 	}
 	if !verdaCluster.ServiceLoadBalancerEnabled() {
-		// Disabled after having been provisioned: tear the instance down
-		// rather than leaving it behind, then forget it.
+
 		if verdaCluster.Status.ServiceLoadBalancer.InstanceID != "" || verdaCluster.Status.ServiceLoadBalancer.Address != "" {
 			requeue, err := r.deleteServiceLoadBalancer(ctx, verdaCluster)
 			if err != nil {
@@ -208,8 +195,6 @@ func (r *clusterScope) reconcileNormal(ctx context.Context, cluster *clusterv1.C
 	return result, nil
 }
 
-// reconcileEndpoint establishes the control plane endpoint, with or without
-// the provider-managed control plane load balancer.
 func (r *clusterScope) reconcileEndpoint(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -218,8 +203,6 @@ func (r *clusterScope) reconcileEndpoint(ctx context.Context, cluster *clusterv1
 	}
 	conditions.Delete(verdaCluster, infrav1.LoadBalancerReadyCondition)
 
-	// The endpoint may be set on the VerdaCluster directly or on the Cluster
-	// (for example by a control plane provider). Either satisfies the contract.
 	endpoint := verdaCluster.Spec.ControlPlaneEndpoint
 	if endpoint.Host == "" {
 		endpoint = cluster.Spec.ControlPlaneEndpoint
@@ -244,8 +227,6 @@ func (r *clusterScope) reconcileEndpoint(ctx context.Context, cluster *clusterv1
 	return ctrl.Result{}, nil
 }
 
-// setFailureDomains publishes the cluster's location as its single failure
-// domain so Machines carry it in status.failureDomain.
 func setFailureDomains(verdaCluster *infrav1.VerdaCluster) {
 	verdaCluster.Status.FailureDomains = []clusterv1.FailureDomain{{
 		Name:         verdaCluster.Spec.Location,
@@ -253,8 +234,6 @@ func setFailureDomains(verdaCluster *infrav1.VerdaCluster) {
 	}}
 }
 
-// reconcileLoadBalancer ensures the haproxy instance exists, publishes its
-// address as the control plane endpoint and keeps its backends in sync.
 func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -282,7 +261,7 @@ func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clust
 
 	switch {
 	case instance.Status == cloud.StatusRunning && instance.IP != "":
-		// Ready to serve; fall through.
+
 	case instanceGone(instance) || instance.Status == cloud.StatusError || instance.Status == cloud.StatusNoCapacity:
 		setLBNotReady(verdaCluster, "InstanceFailed", fmt.Sprintf("load balancer instance %s is in state %q", instance.ID, instance.Status))
 		log.Info("Load balancer instance is in a terminal state", "instanceID", instance.ID, "state", instance.Status)
@@ -304,12 +283,10 @@ func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clust
 	if !slices.Equal(backends, verdaCluster.Status.LoadBalancer.Backends) {
 		log.Info("Updating load balancer backends", "address", instance.IP, "backends", backends)
 		if err := r.LoadBalancer.UpdateBackends(ctx, instance.IP, keys, backends); err != nil {
-			// The instance is running but sshd/haproxy may not be up yet
-			// right after boot; keep trying.
+
 			setLBNotReady(verdaCluster, "BackendUpdateFailed", err.Error())
 			log.Info("Load balancer backend update failed, will retry", "err", err.Error())
-			// Publishing the endpoint is what lets the control plane start,
-			// so the cluster is provisioned even while the first sync retries.
+
 			verdaCluster.Status.Initialization.Provisioned = ptr.To(true)
 			return ctrl.Result{RequeueAfter: lbPollInterval}, nil
 		}
@@ -325,8 +302,6 @@ func (r *clusterScope) reconcileLoadBalancer(ctx context.Context, cluster *clust
 	return ctrl.Result{RequeueAfter: lbResyncInterval}, nil
 }
 
-// controlPlaneAddresses returns the sorted external IPs of the cluster's
-// control plane VerdaMachines that are not being deleted.
 func (r *VerdaClusterReconciler) controlPlaneAddresses(ctx context.Context, cluster *clusterv1.Cluster) ([]string, error) {
 	verdaMachines := &infrav1.VerdaMachineList{}
 	if err := r.List(ctx, verdaMachines, client.InNamespace(cluster.Namespace), client.MatchingLabels{clusterv1.ClusterNameLabel: cluster.Name}); err != nil {
@@ -356,8 +331,6 @@ func (r *VerdaClusterReconciler) controlPlaneAddresses(ctx context.Context, clus
 	return addresses, nil
 }
 
-// isControlPlane reports whether a VerdaMachine backs a control plane Machine,
-// checking its own labels first and then the owning Machine's.
 func (r *VerdaClusterReconciler) isControlPlane(ctx context.Context, vm *infrav1.VerdaMachine) (bool, error) {
 	if _, ok := vm.Labels[clusterv1.MachineControlPlaneLabel]; ok {
 		return true, nil
@@ -417,8 +390,6 @@ func (r *clusterScope) createLoadBalancer(ctx context.Context, cluster *clusterv
 	})
 }
 
-// ensureKeys returns the SSH keys stored in the named Secret, creating it
-// with fresh keys on first use.
 func (r *VerdaClusterReconciler) ensureKeys(ctx context.Context, cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster, name string) (*loadbalancer.Keys, error) {
 	secret := &corev1.Secret{}
 	key := client.ObjectKey{Namespace: verdaCluster.Namespace, Name: name}
@@ -452,7 +423,7 @@ func (r *VerdaClusterReconciler) ensureKeys(ctx context.Context, cluster *cluste
 	}
 	if err := r.Create(ctx, secret); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			// Lost a race with a concurrent reconcile; read what won.
+
 			if err := r.Get(ctx, key, secret); err != nil {
 				return nil, err
 			}
@@ -480,9 +451,6 @@ func keysFromSecret(secret *corev1.Secret) (*loadbalancer.Keys, error) {
 func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav1.VerdaCluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Machines clean up their own instances; Cluster API waits for all
-	// Machines to be gone before deleting the InfraCluster. Only the load
-	// balancers are ours to remove.
 	if requeue, err := r.deleteServiceLoadBalancer(ctx, verdaCluster); err != nil {
 		return ctrl.Result{}, err
 	} else if requeue {
@@ -521,7 +489,6 @@ func (r *clusterScope) reconcileDelete(ctx context.Context, verdaCluster *infrav
 			return ctrl.Result{}, err
 		}
 	}
-	// The key Secret is garbage collected through its owner reference.
 
 	controllerutil.RemoveFinalizer(verdaCluster, infrav1.ClusterFinalizer)
 	return ctrl.Result{}, nil
@@ -552,7 +519,6 @@ func setLBNotReady(verdaCluster *infrav1.VerdaCluster, reason, message string) {
 	}
 }
 
-// patchVerdaCluster summarises the Ready condition and persists spec and status.
 func patchVerdaCluster(ctx context.Context, patchHelper *patch.Helper, verdaCluster *infrav1.VerdaCluster) error {
 	ready := metav1.Condition{Type: clusterv1.ReadyCondition, Status: metav1.ConditionTrue, Reason: clusterv1.ReadyReason}
 	switch {
@@ -579,7 +545,6 @@ func patchVerdaCluster(ctx context.Context, patchHelper *patch.Helper, verdaClus
 	}})
 }
 
-// clusterTagValue identifies a VerdaCluster's load balancer instance.
 func clusterTagValue(verdaCluster *infrav1.VerdaCluster) string {
 	return truncateTag(verdaCluster.Namespace + "/" + verdaCluster.Name)
 }
@@ -592,7 +557,6 @@ func loadBalancerSecretName(verdaCluster *infrav1.VerdaCluster) string {
 	return verdaCluster.Name + "-lb-ssh"
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *VerdaClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
 	predicateLog := ctrl.LoggerFrom(ctx).WithValues("controller", "verdacluster")
 	return ctrl.NewControllerManagedBy(mgr).
@@ -605,7 +569,6 @@ func (r *VerdaClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 			handler.EnqueueRequestsFromMapFunc(util.ClusterToInfrastructureMapFunc(ctx, infrav1.GroupVersion.WithKind(verdaClusterKind), mgr.GetClient(), &infrav1.VerdaCluster{})),
 			builder.WithPredicates(predicates.ClusterPausedTransitions(mgr.GetScheme(), predicateLog)),
 		).
-		// Control plane machines coming and going change the backend list.
 		Watches(
 			&infrav1.VerdaMachine{},
 			handler.EnqueueRequestsFromMapFunc(r.verdaMachineToVerdaCluster),
@@ -614,8 +577,6 @@ func (r *VerdaClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 		Complete(r)
 }
 
-// verdaMachineToVerdaCluster maps a VerdaMachine to the VerdaCluster of the
-// Cluster named in its cluster-name label.
 func (r *VerdaClusterReconciler) verdaMachineToVerdaCluster(ctx context.Context, o client.Object) []reconcile.Request {
 	clusterName, ok := o.GetLabels()[clusterv1.ClusterNameLabel]
 	if !ok {
@@ -631,7 +592,6 @@ func (r *VerdaClusterReconciler) verdaMachineToVerdaCluster(ctx context.Context,
 	return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.InfrastructureRef.Name}}}
 }
 
-// kerrorsJoin joins two errors, tolerating nils.
 func kerrorsJoin(a, b error) error {
 	switch {
 	case a == nil:

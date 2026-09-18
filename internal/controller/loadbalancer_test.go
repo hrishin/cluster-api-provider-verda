@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the haproxy control plane load balancer.
+
 package controller
 
 import (
@@ -39,9 +41,6 @@ var _ = Describe("VerdaCluster with a managed control plane load balancer", func
 		verdaCluster *infrav1.VerdaCluster
 	)
 
-	// controlPlaneVerdaMachine creates a control-plane-labelled VerdaMachine
-	// that already reports the given external IP, as the machine controller
-	// would once its instance is running.
 	controlPlaneVerdaMachine := func(name, ip string) *infrav1.VerdaMachine {
 		vm := &infrav1.VerdaMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -148,8 +147,7 @@ var _ = Describe("VerdaCluster with a managed control plane load balancer", func
 		}, 2*interval*4, interval).Should(Succeed())
 
 		By("removing a control plane machine that is being deleted")
-		// Give it a finalizer so the object lingers with a deletionTimestamp,
-		// as it would while its instance is torn down.
+
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp0), cp0)).To(Succeed())
 			cp0.Finalizers = append(cp0.Finalizers, "test.verda/hold")
@@ -201,8 +199,6 @@ var _ = Describe("VerdaCluster with a managed control plane load balancer", func
 	})
 })
 
-// setExternalIP records an external IP on a VerdaMachine's status, retrying
-// on conflicts with the machine controller.
 func setExternalIP(vm *infrav1.VerdaMachine, ip string) {
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())

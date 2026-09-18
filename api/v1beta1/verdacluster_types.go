@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// VerdaCluster: cluster-level Verda infrastructure — control plane endpoint, haproxy and envoy load balancers, failure domains.
+
 package v1beta1
 
 import (
@@ -237,8 +239,6 @@ type VerdaCluster struct {
 	Status VerdaClusterStatus `json:"status,omitempty,omitzero"`
 }
 
-// IdentitySecretName returns the name of the identity Secret, or "" for the
-// manager's global credentials.
 func (c *VerdaCluster) IdentitySecretName() string {
 	if c.Spec.IdentityRef == nil {
 		return ""
@@ -246,22 +246,18 @@ func (c *VerdaCluster) IdentitySecretName() string {
 	return c.Spec.IdentityRef.Name
 }
 
-// LoadBalancerEnabled reports whether the provider-managed control plane load balancer is requested.
 func (c *VerdaCluster) LoadBalancerEnabled() bool {
 	return c.Spec.ControlPlaneLoadBalancer.Enabled != nil && *c.Spec.ControlPlaneLoadBalancer.Enabled
 }
 
-// ServiceLoadBalancerEnabled reports whether the provider-managed service load balancer is requested.
 func (c *VerdaCluster) ServiceLoadBalancerEnabled() bool {
 	return c.Spec.ServiceLoadBalancer.Enabled != nil && *c.Spec.ServiceLoadBalancer.Enabled
 }
 
-// GetConditions returns the set of conditions for this object.
 func (c *VerdaCluster) GetConditions() []metav1.Condition {
 	return c.Status.Conditions
 }
 
-// SetConditions sets the conditions on this object.
 func (c *VerdaCluster) SetConditions(conditions []metav1.Condition) {
 	c.Status.Conditions = conditions
 }

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Client factories: a static client and one reading credentials from a VerdaCluster's identity Secret.
+
 package cloud
 
 import (
@@ -25,34 +27,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Keys of the identity Secret referenced by VerdaCluster.spec.identityRef.
 const (
 	SecretKeyClientID     = "client-id"
 	SecretKeyClientSecret = "client-secret"
 	SecretKeyBaseURL      = "base-url"
 )
 
-// Identity locates the credentials for one cluster.
 type Identity struct {
-	// Namespace and SecretName identify the Secret holding the credentials.
-	// An empty SecretName selects the manager's global credentials.
 	Namespace  string
 	SecretName string
 }
 
-// Factory returns the Verda client to use for a cluster. Implementations must
-// be safe for concurrent use.
 type Factory interface {
 	ClientFor(ctx context.Context, identity Identity) (Client, error)
 }
 
-// SecretFactory builds clients from identity Secrets, falling back to a global
-// client when a cluster names no identity. Clients are cached per Secret
-// version so credentials are re-read when the Secret changes.
 type SecretFactory struct {
 	Reader client.Reader
 	Global Client
-	// NewClient builds a client from credentials; defaults to NewClient.
+
 	NewClient func(Credentials) (Client, error)
 
 	mu    sync.Mutex
@@ -66,7 +59,6 @@ type cachedClient struct {
 
 var _ Factory = &SecretFactory{}
 
-// ClientFor implements Factory.
 func (f *SecretFactory) ClientFor(ctx context.Context, identity Identity) (Client, error) {
 	if identity.SecretName == "" {
 		if f.Global == nil {
@@ -110,10 +102,8 @@ func (f *SecretFactory) ClientFor(ctx context.Context, identity Identity) (Clien
 	return c, nil
 }
 
-// StaticFactory always returns the same client; for tests.
 type StaticFactory struct{ Client Client }
 
 var _ Factory = StaticFactory{}
 
-// ClientFor implements Factory.
 func (s StaticFactory) ClientFor(context.Context, Identity) (Client, error) { return s.Client, nil }

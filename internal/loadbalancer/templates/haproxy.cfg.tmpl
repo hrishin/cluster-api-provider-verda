@@ -1,0 +1,25 @@
+# Managed by cluster-api-provider-verda. Do not edit.
+global
+    log /dev/log local0
+    maxconn 4096
+
+defaults
+    mode tcp
+    log global
+    option tcplog
+    option dontlognull
+    timeout connect 10s
+    timeout client 1h
+    timeout server 1h
+
+frontend kube-apiserver
+    bind *:6443
+    default_backend kube-apiserver
+
+backend kube-apiserver
+    balance roundrobin
+    option tcp-check
+    default-server inter 5s fall 3 rise 2
+{{- range $i, $ip := .Backends }}
+    server cp-{{ $i }} {{ $ip }}:{{ $.Port }} check
+{{- end }}

@@ -1,0 +1,32 @@
+# Managed by cluster-api-provider-verda. Do not edit.
+resources:
+{{- range . }}
+- "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+  name: {{ .Name }}
+{{- if .UDP }}
+  address:
+    socket_address: {protocol: UDP, address: 0.0.0.0, port_value: {{ .Port }}}
+  listener_filters:
+  - name: envoy.filters.udp_listener.udp_proxy
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.UdpProxyConfig
+      stat_prefix: {{ .Name }}
+      matcher:
+        on_no_match:
+          action:
+            name: route
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+              cluster: {{ .Name }}
+{{- else }}
+  address:
+    socket_address: {address: 0.0.0.0, port_value: {{ .Port }}}
+  filter_chains:
+  - filters:
+    - name: envoy.filters.network.tcp_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+        stat_prefix: {{ .Name }}
+        cluster: {{ .Name }}
+{{- end }}
+{{- end }}

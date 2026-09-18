@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the envoy configuration rendering.
+
 package loadbalancer
 
 import (
@@ -41,7 +43,7 @@ func TestEnvoyResources(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"name: default_dns_53_udp", // sorted first
+		"name: default_dns_53_udp",
 		"socket_address: {protocol: UDP, address: 0.0.0.0, port_value: 53}",
 		"envoy.filters.udp_listener.udp_proxy",
 		"socket_address: {address: 0.0.0.0, port_value: 80}",
@@ -66,13 +68,12 @@ func TestEnvoyResources(t *testing.T) {
 	if strings.Index(cds, "10.0.0.1, port_value: 31080") > strings.Index(cds, "10.0.0.2, port_value: 31080") {
 		t.Error("backends should be sorted for stable output")
 	}
-	// UDP clusters get no TCP health check and no proxy protocol.
+
 	udpCluster := cds[strings.Index(cds, "name: default_dns_53_udp"):strings.Index(cds, "name: default_local_8080_tcp")]
 	if strings.Contains(udpCluster, "health_checks") || strings.Contains(udpCluster, "proxy_protocol") {
 		t.Errorf("udp cluster should have no health check or proxy protocol:\n%s", udpCluster)
 	}
 
-	// Empty input still renders valid documents.
 	lds, cds = EnvoyResources(nil)
 	if !strings.Contains(lds, "resources:") || !strings.Contains(cds, "resources:") {
 		t.Error("empty resources should still render")
@@ -91,7 +92,6 @@ func TestEnvoyStartupScriptAndInstallScript(t *testing.T) {
 		}
 	}
 
-	// The install script must write files atomically; run it in a sandbox.
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
 	}

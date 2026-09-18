@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the defaulting and validation webhooks.
+
 package v1beta1
 
 import (
@@ -34,8 +36,7 @@ var _ = Describe("VerdaMachine webhook", func() {
 			ObjectMeta: metav1.ObjectMeta{GenerateName: "vm-", Namespace: "default"},
 			Spec:       infrav1.VerdaMachineSpec{InstanceType: "CPU.4V.16G"},
 		}
-		// The CRD's CEL rule rejects these before the webhook is consulted; the
-		// webhook checks the same for callers that bypass the API server schema.
+
 		Expect(k8sClient.Create(ctx, vm)).To(MatchError(ContainSubstring("image or osVolumeID")))
 
 		vm.Spec.Image = "ubuntu-24.04"

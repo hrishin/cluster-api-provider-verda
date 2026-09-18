@@ -14,9 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// The Verda cloud controller manager runs the Kubernetes cloud node and node
-// lifecycle controllers against the Verda API. It runs inside workload
-// clusters whose kubelets use --cloud-provider=external.
+// Entry point of the Verda cloud controller manager that runs inside workload clusters.
+
 package main
 
 import (
@@ -46,8 +45,7 @@ func main() {
 	ccmOptions.KubeCloudShared.CloudProvider.Name = ccm.ProviderName
 
 	controllerInitializers := app.DefaultInitFuncConstructors
-	// Node, node lifecycle and service (type=LoadBalancer via the
-	// provider-managed envoy instance) controllers apply; there are no routes.
+
 	delete(controllerInitializers, names.NodeRouteController)
 	for name, constructor := range controllerInitializers {
 		constructor.InitContext.ClientName = "verda-external-" + name

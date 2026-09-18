@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Tests for the VerdaCluster and VerdaMachine create/delete lifecycle.
+
 package controller
 
 import (
@@ -50,8 +52,6 @@ runcmd:
   - kubeadm init --config /run/kubeadm/kubeadm.yaml
 `
 
-// Machine and cluster lifecycle, driven the way core Cluster API drives an
-// infrastructure provider: owner references, cluster label, bootstrap secret.
 var _ = Describe("VerdaCluster and VerdaMachine lifecycle", func() {
 	var (
 		ns           *corev1.Namespace
@@ -82,8 +82,6 @@ var _ = Describe("VerdaCluster and VerdaMachine lifecycle", func() {
 		}
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-		// The core Cluster controller is not running in envtest; set the owner
-		// reference it would set.
 		setOwner(verdaCluster, cluster, "Cluster", clusterv1.GroupVersion.String())
 	})
 
@@ -271,7 +269,6 @@ var _ = Describe("VerdaMachine booting from an OS volume", func() {
 		setOwner(verdaCluster, cluster, "Cluster", clusterv1.GroupVersion.String())
 		markClusterProvisioned(cluster, verdaCluster)
 
-		// The golden image volume, not created by us and therefore untagged.
 		fakeCloud.Volumes["golden"] = &cloud.Volume{ID: "golden", Name: "k8s-node", Status: "detached", Location: "FIN-03", IsOSVolume: true}
 
 		secret := &corev1.Secret{
@@ -287,7 +284,7 @@ var _ = Describe("VerdaMachine booting from an OS volume", func() {
 			},
 			Spec: infrav1.VerdaMachineSpec{
 				InstanceType: "CPU.4V.16G",
-				// Reference the golden volume by its name, not its ID.
+
 				OSVolumeID:        "k8s-node",
 				AdditionalVolumes: []infrav1.AdditionalVolume{{Name: "data", SizeGB: 100}},
 			},
@@ -360,8 +357,6 @@ var _ = Describe("VerdaMachine booting from an OS volume", func() {
 	})
 })
 
-// setOwner mimics the owner reference that core Cluster API sets on
-// infrastructure objects.
 func setOwner(obj client.Object, owner client.Object, kind, apiVersion string) {
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
@@ -375,8 +370,6 @@ func setOwner(obj client.Object, owner client.Object, kind, apiVersion string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// markClusterProvisioned sets the endpoint on the VerdaCluster and mirrors what
-// the core Cluster controller would write into Cluster.status.
 func markClusterProvisioned(cluster *clusterv1.Cluster, verdaCluster *infrav1.VerdaCluster) {
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(verdaCluster), verdaCluster)).To(Succeed())

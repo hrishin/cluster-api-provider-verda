@@ -16,6 +16,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// End-to-end test creating a real cluster on Verda (build tag e2e).
+
 package e2e
 
 import (
@@ -115,7 +117,7 @@ var _ = Describe("Cluster lifecycle", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		// Best-effort cleanup if an earlier step failed.
+
 		_ = kubectl("delete", "cluster", "-n", namespace, clusterName, "--ignore-not-found", "--wait=false")
 	})
 })

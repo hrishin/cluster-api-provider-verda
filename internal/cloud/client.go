@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package cloud wraps the Verda SDK behind a small interface so that the
-// controllers depend only on what they use and can be tested against a fake.
+// Verda API client used by the controllers: instances, startup scripts, volumes, tags and two-phase deletion.
+
 package cloud
 
 import (
@@ -27,39 +27,28 @@ import (
 	"github.com/verda-cloud/verdacloud-sdk-go/pkg/verda"
 )
 
-// ErrNotFound is returned when the requested resource does not exist in Verda.
 var ErrNotFound = errors.New("resource not found")
 
-// ErrNotManaged is returned when asked to delete a resource this provider did not create.
 var ErrNotManaged = errors.New("resource is not managed by cluster-api-provider-verda")
 
-// ErrHostnameInUse is returned by CreateInstance when a live instance that this
-// provider does not own already uses the requested hostname.
 var ErrHostnameInUse = errors.New("hostname is in use by an instance not managed by cluster-api-provider-verda")
 
-// Tag keys used to correlate Verda resources with Cluster API objects.
-// Verda lowercases keys, so they are kept lowercase here.
 const (
-	// TagCluster holds the namespaced name of the owning CAPI Cluster.
 	TagCluster = "capi-cluster"
-	// TagMachine holds the namespaced name of the owning VerdaMachine.
+
 	TagMachine = "capi-machine"
-	// TagLoadBalancer holds the namespaced name of the VerdaCluster whose
-	// control plane load balancer the instance is.
+
 	TagLoadBalancer = "capi-loadbalancer"
-	// TagServiceLoadBalancer holds the namespaced name of the VerdaCluster
-	// whose service load balancer the instance is.
+
 	TagServiceLoadBalancer = "capi-service-loadbalancer"
-	// TagManagedBy identifies resources created by this provider.
+
 	TagManagedBy = "capi-managed-by"
-	// TagRole describes what an instance is for: control-plane, worker,
-	// load-balancer or service-load-balancer.
+
 	TagRole = "capi-role"
-	// ManagedByValue is the value of TagManagedBy.
+
 	ManagedByValue = "cluster-api-provider-verda"
 )
 
-// Instance statuses reported by Verda that the provider acts on.
 const (
 	StatusRunning      = "running"
 	StatusOffline      = "offline"
@@ -68,12 +57,10 @@ const (
 	StatusDeleted      = "deleted"
 	StatusError        = "error"
 	StatusNoCapacity   = "no_capacity"
-	// StatusNotFound is synthesised by the provider for an instance that is
-	// recorded but no longer known to Verda.
+
 	StatusNotFound = "notfound"
 )
 
-// Volume statuses reported by Verda that the provider acts on.
 const (
 	VolumeStatusDetached = "detached"
 	VolumeStatusAttached = "attached"
@@ -81,7 +68,6 @@ const (
 	VolumeStatusDeleted  = "deleted"
 )
 
-// Instance is the subset of a Verda instance the provider cares about.
 type Instance struct {
 	ID              string
 	Hostname        string
@@ -94,7 +80,6 @@ type Instance struct {
 	Tags            map[string]string
 }
 
-// Volume is the subset of a Verda volume the provider cares about.
 type Volume struct {
 	ID         string
 	Name       string
@@ -102,41 +87,36 @@ type Volume struct {
 	Location   string
 	IsOSVolume bool
 	InstanceID string
-	// Managed is true when the volume carries this provider's TagManagedBy tag.
+
 	Managed bool
 }
 
-// InstanceSpec describes an instance to create.
 type InstanceSpec struct {
 	Hostname     string
 	Description  string
 	InstanceType string
-	// Image is an image slug, or the ID of a detached OS volume to boot from.
+
 	Image          string
 	Location       string
 	SSHKeyIDs      []string
 	OSVolumeSizeGB int32
 	Contract       string
 	Spot           bool
-	// SpotDiscontinuePolicy applies to the OS and data volumes of spot instances.
+
 	SpotDiscontinuePolicy string
-	// DataVolumes are created with and attached to the instance.
+
 	DataVolumes []DataVolumeSpec
-	// StartupScript is the script executed on first boot. It carries the
-	// Cluster API bootstrap data.
+
 	StartupScript string
 	Tags          map[string]string
 }
 
-// DataVolumeSpec describes a data volume to create with an instance.
 type DataVolumeSpec struct {
 	Name   string
 	SizeGB int32
 	Type   string
 }
 
-// InstanceTypeInfo is the subset of the Verda instance type catalog used for
-// node capacity.
 type InstanceTypeInfo struct {
 	InstanceType string
 	CPUs         int
@@ -145,61 +125,40 @@ type InstanceTypeInfo struct {
 	GPUModel     string
 }
 
-// Client is the set of Verda operations used by the controllers.
 type Client interface {
-	// GetInstanceType returns catalog information for an instance type, or ErrNotFound.
 	GetInstanceType(ctx context.Context, instanceType string) (*InstanceTypeInfo, error)
-	// GetInstance returns the instance with the given ID, or ErrNotFound.
+
 	GetInstance(ctx context.Context, id string) (*Instance, error)
-	// FindInstanceByHostname returns the live instance with the given hostname,
-	// or a discontinued one if that is all there is, or ErrNotFound.
+
 	FindInstanceByHostname(ctx context.Context, hostname string) (*Instance, error)
-	// FindInstanceByTag returns the first instance carrying key=value, or ErrNotFound.
-	// It is used to recover from a create whose result was never persisted.
+
 	FindInstanceByTag(ctx context.Context, key, value string) (*Instance, error)
-	// CreateInstance creates the startup script and the instance described by
-	// spec. A startup script left behind by an earlier attempt (same name) is
-	// replaced. It fails with ErrHostnameInUse if a live instance not owned by
-	// this provider already has spec.Hostname.
+
 	CreateInstance(ctx context.Context, spec InstanceSpec) (*Instance, error)
-	// DeleteStartupScriptByName deletes any startup scripts with the given
-	// name. Used to clean up scripts whose ID was never recorded.
+
 	DeleteStartupScriptByName(ctx context.Context, name string) error
-	// DeleteInstance takes the next step towards deleting the instance and its
-	// volumes: a running instance is shut down (Verda's delete of a running
-	// instance can stall indefinitely), an offline one is deleted, and the
-	// volumes of a discontinued one are purged from the trash. Callers poll
-	// and call again until PurgeInstanceVolumes reports nothing left. Deleting
-	// a missing instance is not an error. Instances without the TagManagedBy
-	// tag are never touched (ErrNotManaged).
+
 	DeleteInstance(ctx context.Context, id string) error
-	// PurgeInstanceVolumes permanently deletes the volumes that belonged to a
-	// discontinued instance from the trash and reports how many are still
-	// pending (a volume is in the trash only after Verda finishes the
-	// discontinue). Missing volumes count as purged.
+
 	PurgeInstanceVolumes(ctx context.Context, id string) (pending int, err error)
-	// DeleteStartupScript deletes a startup script. Deleting a missing script is not an error.
+
 	DeleteStartupScript(ctx context.Context, id string) error
-	// GetVolume returns the volume with the given ID, or ErrNotFound.
+
 	GetVolume(ctx context.Context, id string) (*Volume, error)
-	// FindVolumeByName returns the first volume with the given name, or ErrNotFound.
+
 	FindVolumeByName(ctx context.Context, name string) (*Volume, error)
-	// CloneVolume clones sourceID into a new volume called name in location and
-	// returns the new volume's ID. The clone is not usable until its status is "detached".
+
 	CloneVolume(ctx context.Context, sourceID, name, location string) (string, error)
-	// DeleteVolume permanently deletes a volume. Deleting a missing volume is not
-	// an error. Volumes not tagged TagManagedBy are never deleted (ErrNotManaged).
+
 	DeleteVolume(ctx context.Context, id string) error
-	// EnsureVolumeTag tags a volume as managed by this provider. Idempotent.
+
 	EnsureVolumeTag(ctx context.Context, id string) error
 }
 
-// sdkClient implements Client on top of the Verda SDK.
 type sdkClient struct {
 	api *verda.Client
 }
 
-// NewClient builds a Client from the given credentials.
 func NewClient(creds Credentials) (Client, error) {
 	opts := []verda.ClientOption{
 		verda.WithClientID(creds.ClientID),
@@ -276,7 +235,7 @@ func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*
 	if err != nil {
 		return nil, fmt.Errorf("listing instances: %w", err)
 	}
-	// Prefer a live instance; discontinued ones stay listed for a while.
+
 	var gone *Instance
 	for i := range instances {
 		inst := toInstance(&instances[i])
@@ -296,8 +255,7 @@ func (c *sdkClient) FindInstanceByTag(ctx context.Context, key, value string) (*
 }
 
 func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Instance, error) {
-	// Hostnames are the node names and the provider IDs; never take over one
-	// that belongs to something else in the account.
+
 	instances, err := c.api.Instances.Get(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("listing instances: %w", err)
@@ -308,7 +266,7 @@ func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Ins
 			return nil, fmt.Errorf("instance %s: %w", existing.ID, ErrHostnameInUse)
 		}
 	}
-	// A script from an interrupted earlier attempt would otherwise leak.
+
 	if err := c.DeleteStartupScriptByName(ctx, spec.Hostname); err != nil {
 		return nil, err
 	}
@@ -359,21 +317,20 @@ func (c *sdkClient) CreateInstance(ctx context.Context, spec InstanceSpec) (*Ins
 
 	inst, err := c.api.Instances.Create(ctx, req)
 	if err != nil {
-		// Don't leak the script if the instance was never created.
+
 		if req.StartupScriptID != nil {
 			_ = c.api.StartupScripts.DeleteStartupScript(ctx, *req.StartupScriptID)
 		}
 		return nil, fmt.Errorf("creating instance %s: %w", spec.Hostname, err)
 	}
 	out := toInstance(inst)
-	// The create response is sometimes just an ID; carry over what we know.
+
 	if out.StartupScriptID == "" && req.StartupScriptID != nil {
 		out.StartupScriptID = *req.StartupScriptID
 	}
 	return out, nil
 }
 
-// spotPolicy returns the on_spot_discontinue value to send, if any.
 func spotPolicy(spec InstanceSpec) string {
 	if !spec.Spot {
 		return ""
@@ -392,7 +349,7 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("getting instance %s before delete: %w", id, err)
 	}
-	// Safety net: never delete instances this provider did not create.
+
 	if toInstance(inst).Tags[TagManagedBy] != ManagedByValue {
 		return fmt.Errorf("instance %s (%s): %w", id, inst.Hostname, ErrNotManaged)
 	}
@@ -403,10 +360,9 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 	case StatusDeleting:
 		return nil
 	case StatusOffline:
-		// Fall through to the delete below.
+
 	default:
-		// Running, provisioning, ...: stop it first. Delete on a running
-		// instance is accepted by the API but may never complete.
+
 		if err := c.api.Instances.Shutdown(ctx, id); err != nil {
 			if isNotFound(err) {
 				return nil
@@ -415,13 +371,7 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 		}
 		return nil
 	}
-	// Delete every volume that came with the instance: the OS volume (or its
-	// clone) and the data volumes. All were created by this provider.
-	//
-	// The list must not contain duplicates and delete_permanently must not be
-	// set: Verda accepts such requests with "success" but never executes them
-	// (observed live: instances stayed running/offline for 30+ minutes). Verda
-	// itself lists the OS volume in volume_ids as well.
+
 	if err := c.api.Instances.Delete(ctx, []string{id}, instanceVolumeIDs(inst), false); err != nil {
 		if isNotFound(err) {
 			return nil
@@ -431,7 +381,6 @@ func (c *sdkClient) DeleteInstance(ctx context.Context, id string) error {
 	return nil
 }
 
-// instanceVolumeIDs returns the OS and data volume IDs of an instance without duplicates.
 func instanceVolumeIDs(inst *verda.Instance) []string {
 	seen := map[string]bool{}
 	var ids []string
@@ -480,8 +429,7 @@ func (c *sdkClient) PurgeInstanceVolumes(ctx context.Context, id string) (int, e
 			}
 			continue
 		}
-		// Not in the trash: either already purged (gone, or still queryable
-		// as "deleted") or still attached / being discontinued (pending).
+
 		vol, err := c.api.Volumes.GetVolume(ctx, volID)
 		switch {
 		case err == nil && vol.Status != VolumeStatusDeleted:
@@ -548,14 +496,11 @@ func (c *sdkClient) CloneVolume(ctx context.Context, sourceID, name, location st
 	if err != nil {
 		return "", fmt.Errorf("cloning volume %s as %s: %w", sourceID, name, err)
 	}
-	// Mark the clone as ours so DeleteVolume will accept it. Tagging can fail
-	// while the clone is still being created; the controller retries via
-	// EnsureVolumeTag.
+
 	_ = c.tagVolume(ctx, id)
 	return id, nil
 }
 
-// EnsureVolumeTag tags a volume as managed by this provider (idempotent).
 func (c *sdkClient) EnsureVolumeTag(ctx context.Context, id string) error {
 	return c.tagVolume(ctx, id)
 }
@@ -564,7 +509,7 @@ func (c *sdkClient) tagVolume(ctx context.Context, id string) error {
 	_, err := c.api.Volumes.AddTag(ctx, id, verda.TagRequest{Key: TagManagedBy, Value: ManagedByValue})
 	var apiErr *verda.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
-		return nil // already tagged
+		return nil
 	}
 	return err
 }
